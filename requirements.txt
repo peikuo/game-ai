@@ -1,0 +1,31 @@
+# Core dependencies
+numpy>=1.20.0
+pillow>=9.0.0
+opencv-python>=4.5.0
+pyyaml>=6.0
+requests>=2.25.0
+mss>=7.0.0  # Fast screenshot capture
+
+# Vision model integration
+# Note: For ollama, you need to install it separately: https://ollama.ai/download
+openai>=1.0.0  # For Qwen API via OpenAI-compatible interface
+python-dotenv>=0.19.0  # For loading environment variables
+
+# Screenshot and game interaction
+pyautogui>=0.9.53
+pyscreeze>=0.1.28
+
+# Multi-agent system
+crewai>=0.28.0
+langchain>=0.1.0
+
+# Text-to-speech
+edge-tts>=6.1.9  # Microsoft Edge TTS
+pyttsx3>=2.90    # Fallback TTS engine
+
+# Streaming
+ffmpeg-python>=0.2.0  # Python bindings for FFmpeg
+
+# Utilities
+tqdm>=4.64.0
+python-dotenv>=0.19.0
