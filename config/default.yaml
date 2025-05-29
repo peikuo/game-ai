@@ -1,0 +1,213 @@
+# Default configuration for Civ6-AI
+
+# Screenshot capture configuration
+capture:
+  region: null  # null for full screen, or [x, y, width, height]
+  save_path: "screenshots"
+  save_screenshots: true
+
+# Vision model configuration
+vision:
+  # Ollama configuration
+  ollama_model: "llava:latest"
+  ollama_api: "http://localhost:11434/api/generate"
+  
+  # Qwen configuration
+  qwen_api_key: ""  # Set this or use environment variable QWEN_API_KEY
+  qwen_model: ""  # Set this or use environment variable QWEN_MODEL
+  qwen_base_url: ""  # Set this or use environment variable QWEN_BASE_URL
+  
+  # Frame extraction configuration
+  frame_extraction:
+    max_frames: 10  # Maximum key frames to extract
+    min_frames: 10  # Minimum frames to analyze for animation detection
+    frame_interval: 0.2  # Time between frames in seconds
+    animation_threshold: 0.05  # Threshold for detecting animation
+    max_capture_time: 10  # Maximum time to capture animation in seconds
+    diff_threshold: 0.1  # Difference threshold for key frame extraction
+    max_image_size: [640, 480]  # Maximum image size for API requests
+
+# Game configuration
+game:
+  # Current game to play
+  current_game: "vanity_fair"
+  
+  # Screenshot and change detection configuration
+  screenshot:
+    save_path: "screenshots"  # Path to save screenshots
+    save_screenshots: false  # Whether to save screenshots to disk
+    
+    # Change detection configuration
+    change_detection:
+      threshold: 0.05  # 5% difference threshold for detecting significant changes
+      min_frames: 5    # Minimum number of frames to analyze for animation detection
+      max_static_diff: 0.01  # 1% maximum difference for a screen to be considered static
+  
+  # Game-specific configurations
+  games:
+    # Civilization VI configuration
+    civ6:
+      name: "Civilization VI"
+      window_name: "Sid Meier's Civilization VI"
+      resolution: [1920, 1080]  # Target resolution for the game window
+      
+      # Game regions for screenshot analysis
+      regions:
+        full_screen: [0, 0, 1920, 1080]
+        minimap: [1650, 830, 270, 250]
+        resources: [10, 10, 400, 40]
+        turn_indicator: [950, 10, 100, 40]
+        # Add specific regions for change detection
+        next_turn_button: [1800, 50, 100, 50]  # Region where the next turn button appears
+      
+      # Game-specific prompts for vision model
+      prompts:
+        about_game: |
+          Civilization VI is a 4X turn-based strategy game developed by Firaxis Games. In this game, the player leads a civilization from the ancient era through to the modern age, aiming to become the most powerful civilization in the world. The main objective is to achieve victory through one of several means: military conquest, technological advancement (science victory), cultural influence, religious dominance, or diplomatic success.
+
+          Gameplay involves:
+          - Exploration: Revealing the map, discovering resources, and meeting other civilizations and city-states.
+          - City-Building: Founding and developing cities, constructing districts, wonders, and improvements to boost growth, science, culture, production, and gold.
+          - Research: Advancing through technology and civics trees to unlock new units, buildings, policies, and abilities.
+          - Diplomacy: Interacting with other leaders through alliances, trade, negotiations, and sometimes war.
+          - Military Strategy: Building and commanding armies to defend your empire or conquer others.
+          - Resource Management: Balancing food, production, gold, science, culture, and faith to grow your civilization efficiently.
+          - Victory Conditions: Achieving specific goals such as capturing capitals (domination), launching a space program (science), attracting tourists (culture), converting civilizations (religion), or winning diplomatic votes.
+
+          Each turn, players make decisions about city management, unit movement, research, diplomacy, and more, adapting their strategy to the evolving game state and opponents’ actions. The game features multiple playable civilizations, each with unique abilities, units, and leaders that influence play style.
+
+          Summary: Civilization VI is a deep and complex strategy game where players guide a civilization across history, making choices in exploration, city-building, research, diplomacy, and warfare to achieve one of several victory types.
+        game_state: |
+          You are an expert Civilization VI analyst. Analyze this screenshot in detail, focusing on the 4X gameplay elements (eXplore, eXpand, eXploit, eXterminate).
+          
+          Describe in detail:
+          1. Game Phase & Turn: Current era (Ancient, Classical, Medieval, Renaissance, Industrial, Modern, Atomic, Information), turn number, and game speed (Quick, Standard, Epic, Marathon)
+          2. Player's Civilization: Leader, unique abilities, and current victory progress (Science, Culture, Domination, Religious, Diplomatic, Score)
+          3. Resources & Economy: Gold per turn, total gold, amenities, housing, production, food, faith, science, and culture points
+          4. Units: Military units (Melee, Ranged, Cavalry, Naval, Air), Civilian units (Settlers, Builders, Traders, Great People), Religious units, their positions and status
+          5. Cities: Population, districts (Campus, Holy Site, Commercial Hub, Theater Square, Industrial Zone, Encampment, Harbor, Entertainment Complex, etc.), buildings, wonders, and growth status
+          6. Map & Terrain: Visible terrain types (Plains, Grassland, Desert, Tundra, Snow, Mountains, Hills, Ocean), features (Forests, Rainforests, Marshes, Oases), strategic resources (Iron, Horses, Coal, Oil, Uranium, etc.), luxury resources (Diamonds, Furs, etc.), bonus resources (Cattle, Fish, etc.)
+          7. Notifications: Active quests, Eureka moments, Inspiration triggers, warnings, and emergencies
+          8. Tech & Civics: Current research in tech tree and civics tree, progress, turns remaining, and available boosts
+          9. Diplomacy: Relations with other civilizations, city-states, alliances, wars, trade deals, and diplomatic visibility
+          10. Government & Policies: Current government type, available policy cards, and active policies
+          
+          First, provide a detailed description of what you see in the screenshot, focusing on the game interface elements.
+          Then, provide a structured analysis of the current game state, evaluating strengths, weaknesses, opportunities, and threats.
+          Finally, suggest 3-5 specific strategic actions with clear reasoning, prioritized by importance.
+        
+        animation: |
+          You are an expert Civilization VI analyst. Analyze this sequence of game frames showing an animation or game event.
+          
+          Focus on identifying:
+          1. Event Type: Combat, Wonder completion, Natural disaster, City founding/growth, Technology/Civic discovery, Great Person activation, Religious conversion, Diplomatic action, or other game mechanics
+          2. Game Mechanics: Specific rules being applied (combat strength modifiers, adjacency bonuses, policy effects, etc.)
+          3. UI Changes: Interface elements appearing/disappearing (notifications, pop-ups, tooltips, menus)
+          4. Resource Changes: Modifications to gold, production, science, culture, faith, population, or other resources
+          5. Map Changes: Alterations to terrain, improvements, districts, or unit positions
+          6. Strategic Impact: How this event affects gameplay, victory conditions, and future decision-making
+          
+          First, describe the sequence chronologically, noting key visual changes between frames.
+          Then, explain the game mechanics being demonstrated and their significance in Civilization VI's systems.
+          Finally, provide strategic advice on how to respond to this event, including both immediate actions and long-term planning considerations.
+    
+    vanity_fair:
+      name: "Vanity Fair: The Pursuit"
+      window_name: "Vanity Fair: The Pursuit"  # Update this to the actual window title if known
+      # resolution: [width, height]  # Optionally set if known
+      prompts:
+        about_game: |
+          Describe Vanity Fair: The Pursuit (名利游戏) based on this screenshot. This is a classic board game where players compete to accumulate wealth and fame by acquiring properties, collecting rent, and making strategic financial decisions.
+
+          Key gameplay elements include:
+          - Moving around the board by rolling dice
+          - Purchasing properties and upgrading them to increase rent
+          - Paying rent when landing on opponents' properties
+          - Drawing event cards that bring opportunities or setbacks
+          - Managing cash flow to avoid bankruptcy
+          - Trading and negotiating with other players
+
+          Players win by being the last one standing after others go bankrupt, or by having the highest wealth when the game ends.
+
+          Based on the screenshot, describe what you see about the game, its current state, and what appears to be happening.
+        
+        game_state: |
+          Analyze this Vanity Fair: The Pursuit screenshot in detail. This is a board game where players compete to accumulate wealth and fame through property acquisition and strategic financial decisions.
+          
+          Describe in detail:
+          1. Game Phase: Current phase of the game (early, mid, late) and whose turn it is
+          2. Player Status: Current player's position, cash, properties, and overall standing
+          3. Board State: Visible properties, their ownership status, and development level
+          4. Resources: Cash on hand, property values, and potential income sources
+          5. Other Players: Visible information about opponents' positions and holdings
+          6. Cards & Events: Any visible event cards, chance cards, or special situations
+          7. UI Elements: Game interface elements showing important information
+          8. Recent Actions: Any visible indications of recent moves or transactions
+          
+          First, provide a detailed description of what you see in the screenshot, focusing on the game interface elements.
+          Then, provide a structured analysis of the current game state, evaluating the player's financial position, property portfolio, and competitive standing.
+          Finally, suggest 3-5 specific strategic actions with clear reasoning, prioritized by importance.
+        
+        animation: |
+          Analyze this sequence of Vanity Fair: The Pursuit game frames showing an animation or game event.
+          
+          Focus on identifying:
+          1. Event Type: Dice roll, property purchase, rent payment, card draw, auction, or other game mechanics
+          2. Game Mechanics: Specific rules being applied (property values, rent calculations, special card effects)
+          3. UI Changes: Interface elements appearing/disappearing (notifications, pop-ups, tooltips, menus)
+          4. Resource Changes: Modifications to cash, property ownership, or other assets
+          5. Player Movement: Changes in player token positions on the board
+          6. Strategic Impact: How this event affects gameplay and future decision-making
+          
+          First, describe the sequence chronologically, noting key visual changes between frames.
+          Then, explain the game mechanics being demonstrated and their significance in Vanity Fair's systems.
+          Finally, provide strategic advice on how to respond to this event, including both immediate actions and long-term planning considerations.
+    # Example template for adding other games
+    # game_name:
+    #   name: "Game Display Name"
+    #   window_name: "Window Title in OS"
+    #   resolution: [width, height]
+    #   regions:
+    #     full_screen: [x, y, width, height]
+    #     # Add other important regions
+    #   prompts:
+    #     game_state: |
+    #       Game-specific prompt for the vision model
+
+# Text-to-speech configuration
+tts:
+  engine: "edge-tts"  # "edge-tts" or "pyttsx3"
+  output_dir: "tts_output"
+  voice_profiles:
+    StrategicAdvisor:
+      voice: "en-US-ChristopherNeural"
+      rate: "+0%"
+      pitch: "+0Hz"
+      style: "serious"
+    MilitaryCommander:
+      voice: "en-US-GuyNeural"
+      rate: "+10%"
+      pitch: "-2Hz"
+      style: "commanding"
+    EconomicAdvisor:
+      voice: "en-US-AriaNeural"
+      rate: "+0%"
+      pitch: "+0Hz"
+      style: "analytical"
+    DiplomaticEnvoy:
+      voice: "en-US-JennyNeural"
+      rate: "-5%"
+      pitch: "+0Hz"
+      style: "friendly"
+    ChiefExecutive:
+      voice: "en-US-DavisNeural"
+      rate: "+0%"
+      pitch: "+0Hz"
+      style: "confident"
+    default:
+      voice: "en-US-ChristopherNeural"
+      rate: "+0%"
+      pitch: "+0Hz"
+      style: "neutral"
+
+
