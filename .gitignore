@@ -20,6 +20,18 @@ var/
 .installed.cfg
 *.egg
 
+# Environment variables and secrets
+.env
+.env.*
+*.env
+.secret*
+*.pem
+*.key
+config.ini
+secrets.json
+.credentials
+api_keys.txt
+
 # Logs
 logs/
 *.log
@@ -41,15 +53,41 @@ Icon
 # Virtual Environment
 venv/
 ENV/
+.venv/
+pyenv/
+pipenv/
+.python-version
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+*.sublime*
+.project
+.pydevproject
+.settings/
+*.code-workspace
 
 # Project specific
 session_logs/
 session_logs/screenshots/
 *.log
 game_ai.log
+
+# Git related
+.git/
+.gitattributes
+.github/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
