@@ -481,7 +481,10 @@ class HTMLSessionLogger:
             if isinstance(game_state, dict) and "raw_description" in game_state:
                 turn_html.append('<div class="llm-response">')
                 turn_html.append('<h4>LLM Response</h4>')
-                turn_html.append(f'<p>{game_state["raw_description"].replace("\n", "<br>")}</p>')
+                # Fix the f-string with backslash issue
+                raw_description = game_state["raw_description"]
+                formatted_description = raw_description.replace("\n", "<br>")
+                turn_html.append(f'<p>{formatted_description}</p>')
                 turn_html.append('</div>')
             
             # Add structured analysis
@@ -528,7 +531,9 @@ class HTMLSessionLogger:
                 for agent_name, thought in agent_thoughts.items():
                     turn_html.append('<div class="agent-thought">')
                     turn_html.append(f'<h4>{agent_name}</h4>')
-                    turn_html.append(f'<p>{thought.replace("\n", "<br>")}</p>')
+                    # Fix the f-string with backslash issue
+                    formatted_thought = thought.replace("\n", "<br>")
+                    turn_html.append(f'<p>{formatted_thought}</p>')
                     turn_html.append('</div>')
                 
                 turn_html.append('</div>')
@@ -643,7 +648,10 @@ class HTMLSessionLogger:
             if isinstance(game_state, dict) and "raw_description" in game_state:
                 game_state_html.append('<div class="llm-response">')
                 game_state_html.append('<h3>LLM Response</h3>')
-                game_state_html.append(f'<p>{game_state["raw_description"].replace("\n", "<br>")}</p>')
+                # Fix the f-string with backslash issue
+                raw_desc = game_state["raw_description"]
+                formatted_desc = raw_desc.replace("\n", "<br>")
+                game_state_html.append(f'<p>{formatted_desc}</p>')
                 game_state_html.append('</div>')
             
             # Add structured analysis
@@ -703,7 +711,9 @@ class HTMLSessionLogger:
             
             if additional_notes is not None:
                 summary_html.append('<h3>Additional Notes</h3>')
-                summary_html.append(f'<p>{additional_notes.replace("\n", "<br>")}</p>')
+                # Fix the f-string with backslash issue
+                formatted_notes = additional_notes.replace("\n", "<br>")
+                summary_html.append(f'<p>{formatted_notes}</p>')
             
             summary_html.append(f'<p><strong>Session ended:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>')
             summary_html.append('</div>')
