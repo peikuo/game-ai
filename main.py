@@ -6,6 +6,7 @@ import argparse
 import logging
 import os
 import time
+import mss
 
 # Import project modules
 from src.capture.screenshot import ScreenCapturer
@@ -15,7 +16,7 @@ from src.utils.config_loader import load_config
 from src.utils.log_utils import setup_logging, get_session_logger
 from src.utils import model_call
 from src.vision.image_analyzer import ImageAnalyzer
-from src.vision.window_detector import WindowDetector
+# WindowDetector removed - using full screen capture instead
 
 logger = logging.getLogger(__name__)
 
@@ -104,47 +105,39 @@ def main():
     }
     screenshot_capture = ScreenCapturer(config=screenshot_config)
 
-    # --- Game window detection ---
-    window_region = None
-    detected_game_name = None
-
-    # Initialize window detector if window detection is enabled
-    if config.get("detect_window", True):
-        logger.info("Detecting game window...")
-        window_detector = WindowDetector(
-            model=args.model,
-            config=config.get("vision", {}),
-        )
-
-        # Wait for 3 seconds to allow the game to process
-        logger.debug("Waiting for 3 seconds...")
-        time.sleep(3)
-
-        # Capture a screenshot for window detection
-        initial_screenshot = screenshot_capture.capture()
-
-        # Detect game window
-        window_region, detected_game_name = window_detector.detect_game_window(
-            initial_screenshot,
-            game_name=game_name,
-            prompt_context="",
-        )
-        if window_region:
-            screenshot_capture.region = window_region
-            logger.info(f"Game window region set to: {window_region}")
-        else:
-            logger.warning(
-                "Could not detect game window region. Using full screen.")
-
-        if detected_game_name:
-            logger.info(f"Detected game name: {detected_game_name}")
-            # Optionally update config or runtime state with detected game name
-    # --- End game window detection ---
+    # --- Use full screen instead of window detection ---
+    logger.info("Using full screen for gameplay (window detection disabled)")
+    
+    # Set up full screen region
+    with mss.mss() as sct:
+        monitor = sct.monitors[1]  # Primary monitor
+        window_region = (monitor['left'], monitor['top'], monitor['width'], monitor['height'])
+    
+    logger.info(f"Using full screen region: {window_region}")
+    detected_game_name = game_name  # Use the configured game name
+    
+    # Wait for 3 seconds to allow the game to start
+    logger.info("Waiting for 3 seconds...")
+    time.sleep(3)
+    
+    # Capture initial screenshot using full screen
+    logger.info("Capturing initial full screen screenshot...")
+    initial_screenshot = screenshot_capture.capture()
+    
+    # Configure screenshot capturer to use full screen region
+    screenshot_capture.region = window_region
+    logger.info(f"Screenshot region set to full screen: {window_region}")
+    # --- End full screen setup ---
 
     # Initialize image analyzer with screenshot capture for frame extraction
+    logger.info(f"Setting up image analyzer for game: {game_name}")
+    
+    # Add the game_name to the game_config to ensure it's properly identified
+    game_config["name"] = game_name
+    
     image_analyzer = ImageAnalyzer(
         model=args.model,
-        config=config.get("vision", {}),
+        config=config,  # Pass the full config instead of just the vision section
         game_config=game_config,
         screenshot_capture=screenshot_capture,
     )

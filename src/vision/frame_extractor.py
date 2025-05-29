@@ -5,21 +5,21 @@ This module provides functionality to detect animations in games,
 extract key frames, and process them for analysis by vision models.
 """
 
-import os
-import logging
-import tempfile
-from pathlib import Path
 import base64
+import logging
+import os
+import tempfile
 import time
-from typing import List, Dict, Optional, Union, Any
+from datetime import datetime
+from pathlib import Path
+from typing import List, Dict, Optional
 
 import cv2
 import numpy as np
 from PIL import Image
 
-from src.utils.image_utils import encode_image_to_base64, truncate_base64
-from src.utils.model_call import ModelCall
-from dotenv import load_dotenv
+from src.utils.image_utils import encode_image_to_base64
+from src.utils import model_call
 
 logger = logging.getLogger(__name__)
 
@@ -62,15 +62,11 @@ class FrameExtractor:
         self.temp_dir = Path(tempfile.gettempdir()) / "civ6_ai_frames"
         self.temp_dir.mkdir(exist_ok=True, parents=True)
 
-        # Initialize the model call handler (only Qwen supports video analysis)
-        self.model_call = ModelCall(model_type="qwen")
+        # No need to initialize model_call as we're using the module directly
+        # Note: only Qwen supports video analysis
         
-        # Check if model call is properly initialized
-        if not self.model_call.api_key:
-            logger.warning(
-                "API key not found. Frame analysis will not be available."
-            )
-            self.model_call = None
+        # Model call initialization is now handled in main.py
+        # No need to check for API key here as that's handled by the model_call module
 
     def detect_and_capture_frames(
             self,
@@ -299,9 +295,8 @@ class FrameExtractor:
         Returns:
             dict: Analysis results
         """
-        if not self.model_call:
-            logger.error("Model call handler not initialized. Cannot analyze frames.")
-            return {"error": "Model call handler not initialized"}
+        # We no longer need to check if model_call is initialized
+        # The model_call module will handle errors internally
 
         if not frames or len(frames) < 1:
             logger.error("No frames provided for analysis")
@@ -335,7 +330,8 @@ class FrameExtractor:
                 base64_frames.append(base64_img)
             
             # Use the centralized model call utility for video analysis
-            result = self.model_call.call_video_model(base64_frames, prompt)
+            # Use the model_call module directly instead of self.model_call
+            result = model_call.call_video_model(base64_frames, prompt)
             
             # Clean up temporary files
             for path in frame_paths:

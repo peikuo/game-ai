@@ -8,6 +8,13 @@ import logging
 import time
 from typing import Any, Dict
 
+try:
+    import pyautogui
+    PYAUTOGUI_AVAILABLE = True
+except ImportError:
+    PYAUTOGUI_AVAILABLE = False
+    logging.warning("PyAutoGUI not available. Install with: pip install pyautogui")
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +36,17 @@ class GameController:
         # Delay between actions in seconds
         self.action_delay = config.get("action_delay", 0.5)
         self.input_config = config.get("input", {})
+        
+        # Check if PyAutoGUI is available
+        if not PYAUTOGUI_AVAILABLE:
+            logger.warning("PyAutoGUI not available. Game control will be simulated.")
+        else:
+            # Configure PyAutoGUI for safety
+            pyautogui.PAUSE = 0.1  # Add small pause between PyAutoGUI commands
+            pyautogui.FAILSAFE = True  # Move mouse to corner to abort
+            screen_width, screen_height = pyautogui.size()
+            logger.info(f"PyAutoGUI detected screen size: {screen_width}x{screen_height}")
+        
         logger.info("GameController initialized for %s", self.game_name)
 
     def execute_action(self, action: Dict[str, Any]) -> bool:
@@ -82,7 +100,19 @@ class GameController:
             return False
 
         logger.debug("Clicking at (%s, %s) with %s button", x, y, button)
-        # TODO: Implement actual mouse click using pyautogui or similar
+        
+        if PYAUTOGUI_AVAILABLE:
+            try:
+                # Move to position first (more reliable)
+                pyautogui.moveTo(x, y, duration=0.2)
+                # Then click
+                pyautogui.click(x=x, y=y, button=button)
+                logger.info(f"PyAutoGUI clicked at ({x}, {y}) with {button} button")
+            except Exception as e:
+                logger.error(f"PyAutoGUI click failed: {e}")
+                return False
+        else:
+            logger.info(f"Simulated click at ({x}, {y}) with {button} button")
 
         # Simulate action delay
         time.sleep(self.action_delay)
@@ -104,7 +134,28 @@ class GameController:
             return False
 
         logger.debug("Pressing key: %s", key)
-        # TODO: Implement actual key press using pyautogui or similar
+        
+        if PYAUTOGUI_AVAILABLE:
+            try:
+                # Handle special key combinations (ctrl+key, shift+key, etc.)
+                if '+' in key:
+                    parts = key.split('+')
+                    modifiers = parts[:-1]
+                    key_to_press = parts[-1]
+                    
+                    # Handle hotkeys with modifiers
+                    keys_to_press = [mod.lower().strip() for mod in modifiers] + [key_to_press.lower().strip()]
+                    pyautogui.hotkey(*keys_to_press)
+                    logger.info(f"PyAutoGUI pressed hotkey: {'+'.join(keys_to_press)}")
+                else:
+                    # Handle single key press
+                    pyautogui.press(key)
+                    logger.info(f"PyAutoGUI pressed key: {key}")
+            except Exception as e:
+                logger.error(f"PyAutoGUI key press failed: {e}")
+                return False
+        else:
+            logger.info(f"Simulated key press: {key}")
 
         # Simulate action delay
         time.sleep(self.action_delay)
@@ -150,7 +201,19 @@ class GameController:
             start_y,
             end_x,
             end_y)
-        # TODO: Implement actual mouse drag using pyautogui or similar
+            
+        if PYAUTOGUI_AVAILABLE:
+            try:
+                # Move to start position first
+                pyautogui.moveTo(start_x, start_y, duration=0.2)
+                # Then drag to end position
+                pyautogui.dragTo(end_x, end_y, duration=0.5, button='left')
+                logger.info(f"PyAutoGUI dragged from ({start_x}, {start_y}) to ({end_x}, {end_y})")
+            except Exception as e:
+                logger.error(f"PyAutoGUI drag failed: {e}")
+                return False
+        else:
+            logger.info(f"Simulated drag from ({start_x}, {start_y}) to ({end_x}, {end_y})")
 
         # Simulate action delay
         time.sleep(self.action_delay)

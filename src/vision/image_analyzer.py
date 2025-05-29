@@ -53,13 +53,26 @@ class ImageAnalyzer:
             )
 
         # Get current game configuration
-        self.current_game = self.game_config.get("current_game", "civ6")
-        self.games = self.game_config.get("games", {})
-
+        self.current_game = game_config.get("name", "vanity_fair")  # Use the game_name passed from main.py
+        logger.info(f"Initializing image analyzer for game: {self.current_game}")
+        
+        # Get the games dictionary
+        self.games = config.get("games", {})
+        
+        # Log available games for debugging
+        logger.info(f"Available games in config: {list(self.games.keys())}")
+        
         # Load game-specific configuration
-        self.game_settings = self.games.get(self.current_game, {})
-        self.game_name = self.game_settings.get("name", "Civilization VI")
+        self.game_settings = self.games.get(self.current_game, {}) or self.games.get("vanity_fair", {})
+        
+        # Explicitly log the game settings to help debug
+        logger.info(f"Loaded game settings for: {self.current_game}")
+        
+        self.game_name = self.game_settings.get("name", "Vanity Fair: The Pursuit")
         self.game_prompts = self.game_settings.get("prompts", {})
+        
+        # Log available prompts for this game
+        logger.info(f"Available prompts for {self.game_name}: {list(self.game_prompts.keys())}")
 
         # No need to initialize model_call as we're using the module directly
         
@@ -160,9 +173,37 @@ class ImageAnalyzer:
             # If no prompt is provided, use the default game state prompt
             if not prompt:
                 prompt = self.game_prompts.get(analysis_type, "Describe what you see in this game screenshot.")
+                if prompt == "Describe what you see in this game screenshot.":
+                    logger.warning(f"⚠️ USING FALLBACK PROMPT - No {analysis_type} prompt found in config for game: {self.current_game}")
+                    logger.warning(f"Available prompts in config: {list(self.game_prompts.keys())}")
+                else:
+                    logger.info(f"Using game-specific prompt for {analysis_type} from config")
+            else:
+                logger.info(f"Using custom prompt for {analysis_type} (passed directly to analyze method)")
             
-            # Use the centralized model call module
-            response = model_call.call_vision_model(base64_image, prompt)
+            # Log the full prompt
+            logger.info(f"===== PROMPT FOR {analysis_type.upper()} =====\n{prompt}\n===== END PROMPT =====")
+            
+            # Validate that the prompt isn't empty or too basic
+            if len(prompt) < 50:
+                logger.warning(f"Prompt seems too short (only {len(prompt)} chars). This may not provide enough context for good analysis.")
+            
+            # Log the first 100 characters of the prompt for verification
+            prompt_preview = prompt[:100] + "..." if len(prompt) > 100 else prompt
+            logger.info(f"Prompt preview: {prompt_preview}")
+            
+            # Prepare and call the vision model
+            try:
+                # Ensure prompt includes the game name for better context
+                if self.game_name and self.game_name not in prompt:
+                    prompt = f"Analyze this {self.game_name} screenshot: {prompt}"
+                    logger.info(f"Added game name to prompt: {self.game_name}")
+                
+                # Call vision model with prepared image and prompt
+                response = model_call.call_vision_model(base64_image, prompt)
+            except Exception as e:
+                logger.error(f"Error calling vision model: {str(e)}")
+                return {"status": "error", "message": str(e)}
             
             if response.get("status") == "success":
                 # Parse the model's response

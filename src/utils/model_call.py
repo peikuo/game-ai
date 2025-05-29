@@ -443,6 +443,13 @@ def call_vision_model(base64_image: str, prompt: str) -> Dict[str, Any]:
     Returns:
         dict: Response from the model with status and response_text or error
     """
+    # Log the prompt being used for debugging
+    logger.info(f"===== VISION MODEL PROMPT START =====\n{prompt}\n===== VISION MODEL PROMPT END =====")
+    
+    # Log image size for debugging
+    image_size_kb = len(base64_image) / 1024 if base64_image else 0
+    logger.info(f"Image size: {image_size_kb:.2f} KB")
+    
     model = _get_model_instance()
     return model.call_vision_model(base64_image, prompt)
 

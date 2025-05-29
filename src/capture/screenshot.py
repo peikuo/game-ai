@@ -57,12 +57,27 @@ class ScreenCapturer:
                 if self.region:
                     # Capture specific region
                     x, y, width, height = self.region
-                    region = {
-                        "left": x,
-                        "top": y,
-                        "width": width,
-                        "height": height}
-                    sct_img = sct.grab(region)
+                    # Log detailed information about the capture region
+                    logger.info(f"Capturing region: x={x}, y={y}, width={width}, height={height}")
+                    
+                    # Ensure coordinates are valid
+                    if x < 0 or y < 0:
+                        logger.warning(f"Negative coordinates detected: ({x}, {y}). Adjusting to (0, 0)")
+                        x = max(0, x)
+                        y = max(0, y)
+                    
+                    # Ensure width and height are reasonable
+                    if width <= 0 or height <= 0:
+                        logger.warning(f"Invalid dimensions: width={width}, height={height}. Using default monitor.")
+                        sct_img = sct.grab(sct.monitors[1])
+                    else:
+                        region = {
+                            "left": x,
+                            "top": y,
+                            "width": width,
+                            "height": height}
+                        logger.info(f"Capturing region: {region}")
+                        sct_img = sct.grab(region)
                 else:
                     # Capture full screen (monitor 1 is usually the primary
                     # monitor)
@@ -80,12 +95,11 @@ class ScreenCapturer:
                 # Mark as optimized for downstream components
                 screenshot.info['optimized'] = True
 
-                # Log basic screenshot info in debug mode
-                if logger.level <= logging.DEBUG:
-                    logger.debug(
-                        "Captured and optimized screenshot: %dx%d pixels",
-                        screenshot.width, screenshot.height
-                    )
+                # Log basic screenshot info
+                logger.info(
+                    "Captured and optimized screenshot: %dx%d pixels",
+                    screenshot.width, screenshot.height
+                )
 
                 if self.save_screenshots:
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

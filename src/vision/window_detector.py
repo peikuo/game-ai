@@ -4,14 +4,17 @@ Module for detecting the location and identity of a game window on the screen us
 
 import json
 import logging
+import os
 import re
 from typing import Optional, Tuple, Dict
+import io
+from PIL import Image
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
-from src.utils.image_utils import process_screenshot, encode_image_to_base64
+from src.utils.image_utils import process_screenshot, encode_image_to_base64, scale_coordinates
 from src.utils import model_call
-from src.utils.config_loader import get_api_config
+from src.utils.config_loader import get_api_config, load_api_config, load_config, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -65,30 +68,30 @@ class WindowDetector:
         Returns:
             Dict of prompt templates
         """
-        # Default prompt templates
+        # Default prompt templates (minimal fallback in case config is missing)
         default_prompts = {
-            "window_detection": (
-                "Locate any game window on this screen. "
-                "Analyze the image and identify the coordinates of the game window. "
-                "Return your answer in the following JSON format:\n"
-                "{\n"
-                '  "x": [left coordinate in pixels],\n'
-                '  "y": [top coordinate in pixels],\n'
-                '  "width": [width in pixels],\n'
-                '  "height": [height in pixels],\n'
-                '  "game_name": [name of the game if visible]\n'
-                "}\n\n"
-                'If no game window is found, reply with: {"not_found": true}\n'
-                "IMPORTANT: Ensure your response includes this exact JSON format."
-            )
+            "window_detection": "Locate any game window and return JSON with x, y, width, height, and game_name."
         }
         
         # Try to load from config
-        api_config = get_api_config()
-        config_prompts = api_config.get("prompts", {}).get("window_detection", {})
+        api_config = load_api_config() if self.config is None else self.config
         
-        # Merge with defaults (config takes precedence)
-        return {**default_prompts, **config_prompts}
+        # Load the main config file
+        config_path = os.path.join(PROJECT_ROOT, "config", "default.yaml")
+        main_config = load_config(config_path)
+        
+        # Get prompts from the vision section of the config
+        vision_prompts = main_config.get("vision", {}).get("prompts", {})
+        window_detection_prompt = vision_prompts.get("window_detection", "")
+        
+        # If we found a prompt in the config, use it
+        if window_detection_prompt:
+            logger.info("Loaded window detection prompt from config file")
+            default_prompts["window_detection"] = window_detection_prompt
+        else:
+            logger.warning("No window detection prompt found in config, using fallback")
+        
+        return default_prompts
     
     def detect_game_window(self, screenshot, game_name="", prompt_context=""):
         """
@@ -102,12 +105,10 @@ class WindowDetector:
         Returns:
             Tuple of (window_region, detected_game_name)
         """
+        # Add game name to prompt context if provided
         if game_name:
-            # Add game name to prompt context if provided
-            additional_context = f"Look for a {game_name} game window. "
-            prompt_context = additional_context + prompt_context
+            prompt_context = f"The game is {game_name}. " + prompt_context
             
-        # Process the screenshot directly without capturing again
         return self._detect_game_window_impl(screenshot, prompt_context)
     
     def _detect_game_window_impl(
@@ -119,6 +120,7 @@ class WindowDetector:
         Args:
             screenshot: PIL Image of the screenshot
             prompt_context (str): Optional extra context for the vision model prompt
+            wait_seconds (float): Time to wait before processing the screenshot
 
         Returns:
             (window_region, game_name):
@@ -139,11 +141,66 @@ class WindowDetector:
             "\n" +
             window_prompt if prompt_context else window_prompt)
 
+        # No waiting here - the main.py file already handles the waiting
+        
+        # Save the original screenshot for inspection
+        from datetime import datetime
+        from pathlib import Path
+        
+        # Create screenshots directory if it doesn't exist
+        screenshots_dir = Path("screenshots")
+        screenshots_dir.mkdir(exist_ok=True)
+        
+        # Save the original screenshot
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        original_path = screenshots_dir / f"original_{timestamp}.png"
+        screenshot.save(original_path)
+        logger.info(f"Original screenshot saved to: {original_path}")
+        
         # Process and optimize the screenshot
         processed_image = process_screenshot(screenshot)
         
-        # Encode the image to base64
-        base64_image = encode_image_to_base64(processed_image, max_width=1024, optimize=True)
+        # Save the processed image before resizing
+        processed_path = screenshots_dir / f"processed_{timestamp}.png"
+        processed_image.save(processed_path)
+        logger.info(f"Processed screenshot saved to: {processed_path}")
+        
+        # Get original image dimensions before resizing
+        original_size = processed_image.size
+        logger.info(f"Original image dimensions: {original_size[0]}x{original_size[1]}")
+        
+        # Encode the image to base64 (this will resize it)
+        max_width = 1024  # Store this for scaling coordinates later
+        base64_image = encode_image_to_base64(processed_image, max_width=max_width, optimize=True)
+        
+        # Save the resized/optimized image used for the model
+        # First, decode the base64 image back to a PIL Image
+        import base64
+        import io
+        
+        try:
+            # Decode base64 to image
+            image_data = base64.b64decode(base64_image)
+            optimized_image = Image.open(io.BytesIO(image_data))
+            
+            # Save the optimized image
+            optimized_path = screenshots_dir / f"optimized_{timestamp}.png"
+            optimized_image.save(optimized_path)
+            logger.info(f"Optimized screenshot saved to: {optimized_path}")
+        except Exception as e:
+            logger.error(f"Failed to save optimized image: {e}")
+
+        
+        # Store the resized dimensions for later coordinate scaling
+        # For simplicity, we'll estimate the resized dimensions based on max_width
+        if original_size[0] > max_width:
+            scale_ratio = max_width / original_size[0]
+            resized_width = max_width
+            resized_height = int(original_size[1] * scale_ratio)
+            resized_size = (resized_width, resized_height)
+        else:
+            # No resizing occurred
+            resized_size = original_size
 
         # Send to model using the centralized model_call module
         model_result = model_call.call_vision_model(base64_image, full_prompt)
@@ -160,9 +217,63 @@ class WindowDetector:
         response_text = model_result.get("response_text", "")
         
         # Parse JSON and validate with Pydantic in one step
-        window_loc = WindowLocation.model_validate_json(response_text)
-        window_region = window_loc.to_tuple()
-        game_name = window_loc.game_name
-        logger.info(f"Detected window: {window_region}, game: {game_name}")
+        try:
+            # Add more detailed logging for debugging
+            logger.info(f"Attempting to parse JSON: {response_text}")
+            
+            # Try to clean the response text if it's not valid JSON
+            try:
+                # First attempt direct parsing
+                window_loc = WindowLocation.model_validate_json(response_text)
+            except Exception as parse_error:
+                logger.warning(f"Initial JSON parsing failed: {parse_error}")
+                return None, None
+            
+            # Get the window region as a tuple from the model (based on resized image)
+            model_window_region = window_loc.to_tuple()
+            game_name = window_loc.game_name
+            
+            # Log detailed information about the detected window (from model)
+            logger.info(f"Model detected window coordinates: x={window_loc.x}, y={window_loc.y}, width={window_loc.width}, height={window_loc.height}")
+            
+            # Scale the coordinates back to the original image size if needed
+            if original_size != resized_size:
+                # Log detailed information before scaling
+                logger.info(f"Original window coordinates: {model_window_region}")
+                logger.info(f"Original image size: {original_size}")
+                logger.info(f"Resized image size: {resized_size}")
+                
+                # Use the scale_coordinates function from image_utils
+                window_region = scale_coordinates(
+                    coords=model_window_region,
+                    original_size=original_size,
+                    resized_size=resized_size
+                )
+                
+                # Log the scaled coordinates
+                logger.info(f"Scaled window coordinates: {window_region}")
+            else:
+                # No scaling needed
+                window_region = model_window_region
+                logger.info("No scaling needed for window coordinates")
+                
+            logger.info(f"Detected game: {game_name}")
+            
+            # Verify the coordinates make sense
+            if window_loc.x < 0 or window_loc.y < 0:
+                logger.warning(f"Detected negative coordinates: ({window_loc.x}, {window_loc.y}). This may cause issues.")
+                
+            if window_loc.width <= 0 or window_loc.height <= 0:
+                logger.warning(f"Invalid window dimensions: width={window_loc.width}, height={window_loc.height}")
+                return None, None
+                
+            # Check if the window size is reasonable
+            if window_loc.width < 100 or window_loc.height < 100:
+                logger.warning(f"Window dimensions seem too small: {window_loc.width}x{window_loc.height}")
+            
+            return window_region, game_name
+        except Exception as e:
+            logger.error(f"Failed to parse window location: {e}")
+            return None, None
         return window_region, game_name
 

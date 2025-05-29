@@ -7,6 +7,7 @@ across the codebase, ensuring consistent image handling.
 
 import io
 import logging
+import base64
 from typing import Tuple, Optional
 
 from PIL import Image
@@ -28,34 +29,37 @@ def process_screenshot(screenshot):
         screenshot: PIL Image of the screenshot
 
     Returns:
-        Optimized PIL Image
+        The original image without optimization
+        
+    Raises:
+        ValueError: If screenshot is None or invalid
+        Exception: For any other errors during processing
     """
-    # Log original size
-    if logger.level <= logging.DEBUG:
-        logger.debug("Original screenshot size: %dx%d", screenshot.width, screenshot.height)
-
-    # Apply optimizations with best settings for game screenshots
-    optimized_img, stats = optimize_image(
-        screenshot,
-        max_width=STANDARD_MAX_WIDTH,
-        max_height=STANDARD_MAX_HEIGHT,
-        optimize_colors=True,
-        compression_level=9,
-        quality=85,
-        convert_to_jpeg=False,  # PNG is usually better for game screenshots
-        jpeg_quality=80,
-        force=False  # Skip if already optimized
-    )
+    if screenshot is None:
+        error_msg = "Cannot process None screenshot"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+        
+    try:
+        # Log original size
+        if logger.level <= logging.DEBUG:
+            logger.debug("Original screenshot size: %dx%d", screenshot.width, screenshot.height)
     
-    # Log optimization results if significant
-    if stats.get("compression_ratio", 1.0) > 1.5 and not stats.get("already_optimized", False):
-        width, height = stats["original_size"]["width"], stats["original_size"]["height"]
-        logger.debug(
-            "Optimized screenshot: %dx%d pixels, ratio: %.1fx, format: %s",
-            width, height, stats['compression_ratio'], stats.get('format', 'PNG')
-        )
-
-    return optimized_img
+        # MODIFIED: Skip optimization and return original image
+        logger.info(f"Skipping image optimization - returning original image {screenshot.width}x{screenshot.height}")
+        
+        # Keep track of image dimensions for later reference
+        screenshot.original_size = (screenshot.width, screenshot.height)
+    
+        return screenshot
+    except AttributeError as e:
+        error_msg = f"Invalid screenshot object: {str(e)}"
+        logger.error(error_msg)
+        raise ValueError(error_msg) from e
+    except Exception as e:
+        error_msg = f"Error processing screenshot: {str(e)}"
+        logger.error(error_msg)
+        raise Exception(error_msg) from e
 
 
 def optimize_image(
@@ -137,7 +141,7 @@ def optimize_image(
         img = img.resize((new_width, new_height), Image.LANCZOS)
         stats["resized"] = True
         stats["resized_size"] = {"width": new_width, "height": new_height}
-        logger.debug(f"Resized image from {width}x{height} to {new_width}x{new_height}")
+        logger.info(f"Resized image from {width}x{height} to {new_width}x{new_height}")
     else:
         stats["resized"] = False
     
@@ -147,23 +151,21 @@ def optimize_image(
         # This works well for games with limited color palettes
         try:
             # Sample a subset of pixels for faster color counting (for large images)
+            # Completely skip color sampling for high-resolution images
+            # This avoids the IndexError warnings and improves performance
             if width * height > 1000000:  # For images larger than 1 megapixel
-                # Sample every 10th pixel in both dimensions for speed
-                sample_data = [img.getpixel((x, y)) for x in range(0, width, 10) 
-                              for y in range(0, height, 10)]
-                unique_colors = len(set(sample_data))
-                # Estimate total unique colors based on sample
-                estimated_unique_colors = min(unique_colors * 5, 256 * 256 * 256)
-                stats["unique_colors_estimated"] = estimated_unique_colors
-                stats["unique_colors_sampled"] = unique_colors
-                
-                # If sample suggests few colors, do a more thorough check
-                if unique_colors < 50:
+                logger.info(f"Skipping color optimization for large image ({width}x{height})")
+                unique_colors = 1000  # Assume many colors for large images
+                stats["color_sampling_skipped"] = True
+            else:
+                # For smaller images, do a full color analysis
+                try:
                     unique_colors = len(set(img.getdata()))
                     stats["unique_colors"] = unique_colors
-            else:
-                unique_colors = len(set(img.getdata()))
-                stats["unique_colors"] = unique_colors
+                    logger.debug(f"Image has {unique_colors} unique colors")
+                except Exception as e:
+                    logger.warning(f"Error analyzing colors: {e}")
+                    unique_colors = 1000  # Assume many colors
             
             if unique_colors < 256:
                 # Use median cut for better quality
@@ -220,7 +222,7 @@ def optimize_image(
     stats["optimized_bytes"] = optimized_bytes
     stats["compression_ratio"] = original_bytes / optimized_bytes if optimized_bytes > 0 else 0
     
-    logger.debug(
+    logger.info(
         f"Image optimization: ~{original_bytes/1024:.1f}KB → {optimized_bytes/1024:.1f}KB "
         f"(ratio: {stats['compression_ratio']:.1f}x)"
     )
@@ -284,24 +286,28 @@ def truncate_base64(base64_str, max_length=50):
     return f"{first_part}...{last_part} (length: {total_length})"
 
 
-def encode_image_to_base64(image, max_width=None, optimize=True, force_optimize=False):
+def encode_image_to_base64(image, max_width=1024, optimize=False, force_optimize=False):
     """
-    Encode an image to base64 string, with optional optimization.
+    Encode an image to base64 string with resizing but no other optimization.
     
     Args:
         image: PIL Image or path to image
-        max_width: Maximum width to resize to
-        optimize: Whether to optimize the image
-        force_optimize: Force optimization even if already optimized
+        max_width: Maximum width to resize to (default: 1024 for API compatibility)
+        optimize: No longer used (kept for backward compatibility)
+        force_optimize: No longer used (kept for backward compatibility)
         
     Returns:
-        Base64 encoded image string or None if error occurs
+        Base64 encoded image string
+        
+    Raises:
+        ValueError: If image is None
+        IOError: If image file cannot be opened
+        Exception: For any other errors during encoding
     """
-    import base64
-    
     if image is None:
-        logger.error("Cannot encode None image to base64")
-        return None
+        error_msg = "Cannot encode None image to base64"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     
     try:
         # Load image if it's a path
@@ -309,19 +315,24 @@ def encode_image_to_base64(image, max_width=None, optimize=True, force_optimize=
             try:
                 image = Image.open(image)
             except Exception as e:
-                logger.error("Failed to open image: %s", str(e))
-                return None
+                error_msg = f"Failed to open image: {str(e)}"
+                logger.error(error_msg)
+                raise IOError(error_msg) from e
         
         # Make a copy to avoid modifying the original
         img = image.copy()
+        original_size = img.size
         
-        # Optimize if requested
-        if optimize:
-            img, stats = optimize_image(img, max_width=max_width, force=force_optimize)
-        elif max_width:
-            # Only resize if needed and not already optimized with resizing
-            if force_optimize or not (hasattr(img, 'info') and img.info.get('optimized', False)):
-                img = resize_image(img, max_width)
+        # MODIFIED: Only resize the image for API compatibility, but no other optimization
+        # We still need to resize because the API has size limits
+        if max_width and img.width > max_width:
+            # Calculate new height maintaining aspect ratio
+            aspect_ratio = img.height / img.width
+            new_height = int(max_width * aspect_ratio)
+            img = img.resize((max_width, new_height), Image.LANCZOS)
+            logger.info(f"Resized image from {original_size[0]}x{original_size[1]} to {img.width}x{img.height} for API compatibility")
+        else:
+            logger.info(f"Using original image size: {img.width}x{img.height}")
         
         # Encode to base64
         buffered = io.BytesIO()
@@ -332,6 +343,82 @@ def encode_image_to_base64(image, max_width=None, optimize=True, force_optimize=
         logger.debug("Encoded image to base64: %s", truncate_base64(base64_str))
         
         return base64_str
+    except (ValueError, IOError) as e:
+        # Let these specific exceptions propagate up
+        raise
     except Exception as e:
-        logger.error("Error encoding image to base64: %s", str(e))
-        return None
+        error_msg = f"Error encoding image to base64: {str(e)}"
+        logger.error(error_msg)
+        raise Exception(error_msg) from e
+
+
+def scale_coordinates(coords, original_size, resized_size):
+    """
+    Scale coordinates from a resized image back to the original image size.
+    
+    Args:
+        coords: Tuple of (x, y, width, height) coordinates in the resized image
+        original_size: Tuple of (width, height) of the original image
+        resized_size: Tuple of (width, height) of the resized image
+        
+    Returns:
+        Tuple of (x, y, width, height) coordinates scaled to the original image
+        
+    Raises:
+        ValueError: If coordinates are invalid
+        Exception: For any other errors during scaling
+    """
+    if coords is None:
+        error_msg = "Cannot scale None coordinates"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    try:
+        # Extract coordinates
+        x, y, width, height = coords
+        
+        # Make sure coordinates are integers
+        if not all(isinstance(coord, int) for coord in [x, y, width, height]):
+            logger.warning(f"Non-integer coordinates detected: {coords}")
+            # Convert to integers
+            x, y, width, height = int(x), int(y), int(width), int(height)
+        
+        # Ensure width and height are positive
+        if width <= 0 or height <= 0:
+            error_msg = f"Invalid dimensions detected: width={width}, height={height}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        # MODIFIED: Apply a fixed 2x scaling factor for Retina displays
+        fixed_scale = 2.0
+        
+        # Scale coordinates
+        scaled_x = int(x * fixed_scale)
+        scaled_y = int(y * fixed_scale)
+        scaled_width = int(width * fixed_scale)
+        scaled_height = int(height * fixed_scale)
+        
+        # Ensure scaled coordinates are valid
+        scaled_x = max(0, scaled_x)  # Ensure x is not negative
+        scaled_y = max(0, scaled_y)  # Ensure y is not negative
+        
+        # Get original_width and original_height if available
+        if original_size:
+            original_width, original_height = original_size
+            
+            # Ensure width and height are reasonable
+            scaled_width = min(scaled_width, original_width - scaled_x)  # Ensure width doesn't exceed image
+            scaled_height = min(scaled_height, original_height - scaled_y)  # Ensure height doesn't exceed image
+        
+        logger.info(f"Scaling coordinates: ({x}, {y}, {width}, {height}) → "
+                  f"({scaled_x}, {scaled_y}, {scaled_width}, {scaled_height}), "
+                  f"using fixed scale factor: {fixed_scale:.2f}")
+        
+        return (scaled_x, scaled_y, scaled_width, scaled_height)
+    except ValueError as e:
+        # Let ValueError propagate up
+        raise
+    except Exception as e:
+        error_msg = f"Error scaling coordinates: {str(e)}"
+        logger.error(error_msg)
+        raise Exception(error_msg) from e

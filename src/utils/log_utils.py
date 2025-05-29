@@ -177,7 +177,18 @@ class HTMLSessionLogger:
         # Initialize the log file with HTML template
         self._initialize_html_file()
         
+        # Log more detailed information about the HTML session log
         logger.info(f"HTML Session log initialized at {self.log_file}")
+        logger.info(f"Session ID: {self.session_id}")
+        logger.info(f"Log directory: {self.log_dir} (absolute: {self.log_dir.absolute()})")
+        # Check if the log directory exists and is writable
+        if not self.log_dir.exists():
+            logger.error(f"Log directory does not exist: {self.log_dir}")
+        elif not os.access(self.log_dir, os.W_OK):
+            logger.error(f"Log directory is not writable: {self.log_dir}")
+        # Check if the log file exists and is writable
+        if self.log_file.exists() and not os.access(self.log_file, os.W_OK):
+            logger.error(f"Log file exists but is not writable: {self.log_file}")
 
     def _initialize_html_file(self):
         """Initialize the HTML log file with header and CSS styling."""
@@ -438,9 +449,12 @@ class HTMLSessionLogger:
         try:
             self.turn_count = turn_number
             
+            # Log that we're starting to log a turn
+            logger.info(f"Logging turn {turn_number} to HTML session log")
+            
             # Start building HTML content
             turn_html = []
-            turn_html.append(f'<div class="turn-container">')
+            turn_html.append(f'<div class="turn" id="turn-{turn_number}">')
             turn_html.append(f'<h2>Turn {turn_number} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</h2>')
             
             # Create tab navigation
