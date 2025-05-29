@@ -49,5 +49,7 @@ ENV/
 *.swo
 
 # Project specific
+session_logs/
 session_logs/screenshots/
+*.log
 game_ai.log
