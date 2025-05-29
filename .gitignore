@@ -68,6 +68,8 @@ pipenv/
 .pydevproject
 .settings/
 *.code-workspace
+.pylintrc
+.windsurf.ignore
 
 # Project specific
 session_logs/
@@ -79,6 +81,7 @@ game_ai.log
 .git/
 .gitattributes
 .github/
+.gitignore
 
 # Temporary files
 tmp/
