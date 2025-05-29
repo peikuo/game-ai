@@ -12,8 +12,8 @@ from src.capture.screenshot import ScreenCapturer
 from src.game_interface import game_controller
 from src.tts import voice_synthesizer
 from src.utils.config_loader import load_config
-from src.utils.log_utils import setup_logging
-from src.utils.session_logger import SessionLogger
+from src.utils.log_utils import setup_logging, get_session_logger
+from src.utils import model_call
 from src.vision.image_analyzer import ImageAnalyzer
 from src.vision.window_detector import WindowDetector
 
@@ -85,6 +85,9 @@ def main():
 
     # Load configuration
     config = load_config(args.config)
+    
+    # Initialize the model_call module
+    model_call.initialize(model_type=args.model, config=config)
 
     # Override game from command line if provided
     game_name = args.game or config.get("game", "vanity_fair")
@@ -150,11 +153,12 @@ def main():
     session_log = None
     if not args.no_logging:
         logger.info(f"Initializing session logger in {args.log_dir}")
-        session_log = SessionLogger(log_dir=args.log_dir)
+        session_log = get_session_logger(log_dir=args.log_dir, game_name="Game AI")
 
     # Initialize game interface
     logger.info("Initializing game controller")
-    game_interface = game_controller.GameController(config=game_config)
+    # Create game controller but don't use it yet (will be used in future implementation)
+    _ = game_controller.GameController(config=game_config)
 
     # Initialize TTS if enabled
     tts_engine = None
@@ -162,10 +166,10 @@ def main():
         logger.info("Initializing text-to-speech")
         tts_engine = voice_synthesizer.VoiceSynthesizer(config.get("tts", {}))
 
-    # Main loop
-    logger.info(f"Starting main loop (max turns: {args.max_turns})")
-    turn_count = 0
+    # Main game loop
     try:
+        turn_count = 0
+        # Run for specified number of turns or until interrupted
         while turn_count < args.max_turns:
             # Increment turn counter
             turn_count += 1

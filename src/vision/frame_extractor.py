@@ -5,22 +5,21 @@ This module provides functionality to detect animations in games,
 extract key frames, and process them for analysis by vision models.
 """
 
-import base64
-import logging
 import os
+import logging
 import tempfile
-import time
-from datetime import datetime
 from pathlib import Path
+import base64
+import time
+from typing import List, Dict, Optional, Union, Any
 
 import cv2
 import numpy as np
-from dotenv import load_dotenv
-from openai import OpenAI
 from PIL import Image
 
-# Load environment variables
-load_dotenv()
+from src.utils.image_utils import encode_image_to_base64, truncate_base64
+from src.utils.model_call import ModelCall
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
@@ -63,21 +62,15 @@ class FrameExtractor:
         self.temp_dir = Path(tempfile.gettempdir()) / "civ6_ai_frames"
         self.temp_dir.mkdir(exist_ok=True, parents=True)
 
-        # API configuration
-        self.api_key = os.environ.get("QWEN_API_KEY")
-        self.base_url = os.environ.get(
-            "QWEN_BASE_URL",
-            "https: // dashscope.aliyuncs.com/compatible-mode/v1")
-        self.model_name = os.environ.get("QWEN_MODEL", "qwen-vl-max-latest")
-
-        # Initialize OpenAI client for Qwen
-        if self.api_key:
-            self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
-        else:
+        # Initialize the model call handler (only Qwen supports video analysis)
+        self.model_call = ModelCall(model_type="qwen")
+        
+        # Check if model call is properly initialized
+        if not self.model_call.api_key:
             logger.warning(
-                "Qwen API key not found. Frame analysis will not be available."
+                "API key not found. Frame analysis will not be available."
             )
-            self.client = None
+            self.model_call = None
 
     def detect_and_capture_frames(
             self,
@@ -306,10 +299,9 @@ class FrameExtractor:
         Returns:
             dict: Analysis results
         """
-        if not self.client:
-            logger.error(
-                "Qwen API client not initialized. Cannot analyze frames.")
-            return {"error": "API client not initialized"}
+        if not self.model_call:
+            logger.error("Model call handler not initialized. Cannot analyze frames.")
+            return {"error": "Model call handler not initialized"}
 
         if not frames or len(frames) < 1:
             logger.error("No frames provided for analysis")
@@ -325,8 +317,7 @@ class FrameExtractor:
             4. Any notifications or alerts
             5. The significance of these changes in the game context
 
-            Provide a detailed description of what's happening and
-    its meaning in the game.
+            Provide a detailed description of what's happening and its meaning in the game.
             """
 
         try:
@@ -336,51 +327,31 @@ class FrameExtractor:
                 frame_path = self.save_frame(frame, i)
                 frame_paths.append(frame_path)
 
-            # Encode images to base64
-            base64_images = [self.encode_image(path) for path in frame_paths]
+            # Load images as PIL Images and encode to base64
+            base64_frames = []
+            for path in frame_paths:
+                img = Image.open(path)
+                base64_img = encode_image_to_base64(img, max_width=640, optimize=True)
+                base64_frames.append(base64_img)
             
-            # Log truncated base64 strings
-            from src.utils.image_utils import truncate_base64
-            for i, img in enumerate(base64_images):
-                logger.debug("Frame %d base64: %s", i, truncate_base64(img))
-
-            # Create the completion request
-            logger.debug(
-                "Sending frame sequence analysis request to Qwen API using model: %s",
-                self.model_name
-            )
-
-            # Prepare the video frames for the API request
-            video_frames = [
-                f"data:image/jpeg;base64,{img}" for img in base64_images]
-
-            completion = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "video", "video": video_frames},
-                            {"type": "text", "text": prompt},
-                        ],
-                    },
-                ],
-            )
-
-            # Extract the response content
-            response_text = completion.choices[0].message.content
-            logger.debug(
-                f"Received response from Qwen API: {response_text[:100]}...")
-
+            # Use the centralized model call utility for video analysis
+            result = self.model_call.call_video_model(base64_frames, prompt)
+            
             # Clean up temporary files
             for path in frame_paths:
                 try:
                     os.remove(path)
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to remove temporary file {path}:{e}")
+                    logger.warning(f"Failed to remove temporary file {path}: {e}")
 
-            return {"analysis": response_text, "frame_count": len(frames)}
+            if result.get("status") == "success":
+                return {
+                    "analysis": result.get("response_text", ""),
+                    "frame_count": len(frames)
+                }
+            else:
+                logger.error(f"Error in model call: {result.get('error')}")
+                return {"error": result.get("error", "Unknown error in model call")}
 
         except Exception as e:
             logger.exception(f"Error analyzing frames: {e}")
@@ -399,35 +370,38 @@ class FrameExtractor:
                 dict: Analysis results
         """
         # Detect and capture animation frames
+        logger.info(f"Detecting animation in region: {region_name}")
         frames = self.detect_and_capture_frames(region_name)
 
-        if not frames or len(frames) < self.min_frames:
-            logger.info(
-                "No significant animation detected or not enough frames captured"
-            )
-            return {
-                "status": "no_animation",
-                "message": "No significant animation detected",
-            }
+        if not frames or len(frames) < 2:
+            logger.info("No animation detected or insufficient frames captured")
+            return {"status": "no_animation", "message": "No animation detected"}
 
         # Extract key frames
+        logger.info(f"Extracting key frames from {len(frames)} captured frames")
         key_frames = self.extract_key_frames(frames)
 
-        if not key_frames:
-            logger.error("Failed to extract key frames")
+        if not key_frames or len(key_frames) < 1:
+            logger.info("No key frames extracted")
             return {
-                "status": "error",
-                "message": "Failed to extract key frames"}
+                "status": "no_key_frames",
+                "message": "No key frames could be extracted"
+            }
 
         # Analyze the key frames
+        logger.info(f"Analyzing {len(key_frames)} key frames")
         analysis_result = self.analyze_frames(key_frames, prompt)
 
-        # Add status to the result
         if "error" in analysis_result:
-            analysis_result["status"] = "error"
-        else:
-            analysis_result["status"] = "success"
-            analysis_result["key_frame_count"] = len(key_frames)
-            analysis_result["total_frame_count"] = len(frames)
+            logger.error(f"Error analyzing frames: {analysis_result['error']}")
+            return {
+                "status": "error",
+                "message": f"Error analyzing frames: {analysis_result['error']}"
+            }
 
-        return analysis_result
+        return {
+            "status": "success",
+            "analysis": analysis_result.get("analysis", ""),
+            "key_frame_count": len(key_frames),
+            "total_frame_count": len(frames)
+        }
