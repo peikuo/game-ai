@@ -148,99 +148,101 @@ class WindowDetector:
         # Send to model using the centralized model_call module
         model_result = model_call.call_vision_model(base64_image, full_prompt)
         
-        # Get the response text
-        response_text = ""
-        if model_result.get("status") == "success":
-            response_text = model_result.get("response_text", "")
-        else:
+        # Parse model response directly to Pydantic model
+        window_region = None
+        game_name = None
+        
+        if model_result.get("status") != "success":
             logger.error(f"Error in model call: {model_result.get('error')}")
             return None, None
             
-        # Create a result dict similar to what image_analyzer would return
-        result = {"raw_description": response_text}
+        # Get the response text
+        response_text = model_result.get("response_text", "")
+        
+        # Extract JSON blocks from the response
+        json_matches = [
+            s.strip()
+            for s in response_text.split("\n")
+            if s.strip().startswith("{") and s.strip().endswith("}")
+        ]
+        
+        # Try to parse response directly to Pydantic model
+        for json_str in json_matches:
+            try:
+                # Parse JSON and validate with Pydantic in one step
+                window_loc = WindowLocation.model_validate_json(json_str)
+                window_region = window_loc.to_tuple()
+                game_name = window_loc.game_name
+                logger.info(f"Detected window: {window_region}, game: {game_name}")
+                return window_region, game_name
+            except (json.JSONDecodeError, ValidationError):
+                # Continue to next JSON block if this one fails
+                continue
 
-        # Parse model response for [x, y, width, height] and game name
+        # If we didn't find valid JSON, try to extract coordinates from text
+        # If no JSON found, try regex extraction
+        if not window_region:
+            window_region, extracted_game_name = self._extract_coordinates_with_regex(response_text)
+            if extracted_game_name and not game_name:
+                game_name = extracted_game_name
+
+        return window_region, game_name
+        
+    def _extract_coordinates_with_regex(self, text: str) -> Tuple[Optional[Tuple[int, int, int, int]], Optional[str]]:
+        """
+        Extract window coordinates and game name from text using regex patterns.
+        
+        Args:
+            text (str): Text to extract coordinates from
+            
+        Returns:
+            Tuple of (window_region, game_name)
+        """
         window_region = None
         game_name = None
+        
+        # Look for patterns like [x, y, width, height] or coordinates:
+        coord_patterns = [
+            # [x, y, width, height]
+            r"\[(\d+)[^\d]+(\d+)[^\d]+(\d+)[^\d]+(\d+)\]",
+            # coordinates: x, y, width, height
+            r"coordinates:?\s*(\d+)[^\d]+(\d+)[^\d]+(\d+)[^\d]+(\d+)",
+            # window: x, y, width, height
+            r"window:?\s*(\d+)[^\d]+(\d+)[^\d]+(\d+)[^\d]+(\d+)",
+        ]
 
-        try:
-            # Extract raw text from result
-            raw_text = result.get("raw_description", "")
-            
-            # Find JSON blocks in the response
-            json_matches = [
-                s.strip()
-                for s in raw_text.split("\n")
-                if s.strip().startswith("{") and s.strip().endswith("}")
-            ]
-            
-            # Try each JSON block with Pydantic
-            for json_str in json_matches:
+        # Try each pattern
+        for pattern in coord_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
                 try:
-                    # Parse JSON and validate with Pydantic in one step
-                    window_loc = WindowLocation.model_validate_json(json_str)
+                    x, y, width, height = map(int, match.groups())
+                    window_loc = WindowLocation(
+                        x=x, y=y, width=width, height=height
+                    )
                     window_region = window_loc.to_tuple()
-                    game_name = window_loc.game_name
-                    logger.info(f"Detected window: {window_region}, game: {game_name}")
                     break
-                except (json.JSONDecodeError, ValidationError):
-                    # Continue to next JSON block if this one fails
+                except (ValueError, ValidationError):
                     continue
+                    
+        # Try to extract game name if we found coordinates
+        if window_region:
+            game_name_patterns = [
+                r"game\s*name:?\s*([\w\s\-:]+)",
+                r"detected\s*game:?\s*([\w\s\-:]+)",
+                r"game\s*is:?\s*([\w\s\-:]+)",
+            ]
 
-            # If we didn't find valid JSON, try to extract coordinates from text
-            if not window_region:
-                # Look for patterns like [x, y, width, height] or coordinates:
-                # x, y, width, height
-                coord_patterns = [
-                    # [x, y, width, height]
-                    r"\[(\d+)[^\d]+(\d+)[^\d]+(\d+)[^\d]+(\d+)\]",
-                    # coordinates: x, y, width, height
-                    r"coordinates:?\s*(\d+)[^\d]+(\d+)[^\d]+(\d+)[^\d]+(\d+)",
-                    # window: x, y, width, height
-                    r"window:?\s*(\d+)[^\d]+(\d+)[^\d]+(\d+)[^\d]+(\d+)",
-                ]
-
-                # Try each pattern
-                for pattern in coord_patterns:
-                    match = re.search(pattern, raw_text, re.IGNORECASE)
-                    if match:
-                        try:
-                            x, y, width, height = map(int, match.groups())
-                            window_loc = WindowLocation(
-                                x=x, y=y, width=width, height=height
-                            )
-                            window_region = window_loc.to_tuple()
-                            break
-                        except (ValueError, ValidationError):
-                            continue
-
-                # Try to extract game name if we found coordinates
-                if window_region and not game_name:
-                    game_name_patterns = [
-                        r"game\s*name:?\s*([\w\s\-:]+)",
-                        r"detected\s*game:?\s*([\w\s\-:]+)",
-                        r"game\s*is:?\s*([\w\s\-:]+)",
-                    ]
-
-                    for pattern in game_name_patterns:
-                        match = re.search(pattern, raw_text, re.IGNORECASE)
-                        if match:
-                            game_name = match.group(1).strip()
-                            break
-        except Exception as e:
-            logger.error("Error parsing window location: %s", e)
-
-        if not window_region:
-            logger.warning(
-                "Could not extract window coordinates from model response. Using full screen."
-            )
+            for pattern in game_name_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    game_name = match.group(1).strip()
+                    break
+                    
+        # Log results
         if window_region:
             logger.info("Detected game window region: %s", window_region)
         if game_name:
             logger.info("Detected game name: %s", game_name)
-
-        # Enhance prompt to get better structured output next time
-        if not window_region:
-            logger.info("Adding structured output hint to prompt for next detection attempt")
-
+            
         return window_region, game_name
