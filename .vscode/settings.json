@@ -1,0 +1,10 @@
+{
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true,
+    "python.linting.pylintPath": "/Users/peik/anaconda3/envs/aigame/bin/pylint",
+    "python.defaultInterpreterPath": "/Users/peik/anaconda3/envs/aigame/bin/python",
+    "python.analysis.extraPaths": [
+        "/Users/peik/Workspace/windcode/civ6-ai",
+        "/Users/peik/anaconda3/envs/aigame/lib/python3.11/site-packages"
+    ]
+}
