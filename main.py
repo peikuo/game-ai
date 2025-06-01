@@ -6,17 +6,16 @@ import argparse
 import logging
 import os
 import time
-import mss
 
 # Import project modules
 from src.capture.screenshot import ScreenCapturer
-from src.game_interface import game_controller
-from src.tts import voice_synthesizer
+from src.game_interface.game_controller import GameController
+from src.game_player.game_analyzer import GameAnalyzer
 from src.utils.config_loader import load_config
-from src.utils.log_utils import setup_logging, get_session_logger
+from src.utils.log_utils import setup_logging, get_session_logger, log_screenshot, log_game_state
 from src.utils import model_call
 from src.vision.image_analyzer import ImageAnalyzer
-# WindowDetector removed - using full screen capture instead
+from src.vision.window_detector import WindowDetector
 
 logger = logging.getLogger(__name__)
 
@@ -87,12 +86,25 @@ def main():
     # Load configuration
     config = load_config(args.config)
     
+    # Debug log the configuration
+    if args.debug:
+        logger.debug(f"Loaded config keys: {list(config.keys())}")
+        if "games" in config:
+            logger.debug(f"Games in config: {list(config.get('games', {}).keys())}")
+            for game_key, game_data in config.get('games', {}).items():
+                logger.debug(f"Game '{game_key}' config keys: {list(game_data.keys())}")
+                if 'prompts' in game_data:
+                    logger.debug(f"Game '{game_key}' prompts: {list(game_data.get('prompts', {}).keys())}")
+    
     # Initialize the model_call module
     model_call.initialize(model_type=args.model, config=config)
 
     # Override game from command line if provided
-    game_name = args.game or config.get("game", "vanity_fair")
+    game_name = args.game or config.get("current_game", "vanity_fair")
     game_config = config.get("games", {}).get(game_name, {})
+    
+    # Add the game name to the config to ensure it's available for all components
+    game_config["current_game"] = game_name
 
     logger.info(f"Starting AI agent for game: {game_name}")
     logger.info(f"Using vision model: {args.model}")
@@ -105,59 +117,68 @@ def main():
     }
     screenshot_capture = ScreenCapturer(config=screenshot_config)
 
-    # --- Use full screen instead of window detection ---
-    logger.info("Using full screen for gameplay (window detection disabled)")
-    
-    # Set up full screen region
-    with mss.mss() as sct:
-        monitor = sct.monitors[1]  # Primary monitor
-        window_region = (monitor['left'], monitor['top'], monitor['width'], monitor['height'])
-    
-    logger.info(f"Using full screen region: {window_region}")
-    detected_game_name = game_name  # Use the configured game name
-    
-    # Wait for 3 seconds to allow the game to start
-    logger.info("Waiting for 3 seconds...")
-    time.sleep(3)
-    
-    # Capture initial screenshot using full screen
-    logger.info("Capturing initial full screen screenshot...")
-    initial_screenshot = screenshot_capture.capture()
-    
-    # Configure screenshot capturer to use full screen region
-    screenshot_capture.region = window_region
-    logger.info(f"Screenshot region set to full screen: {window_region}")
-    # --- End full screen setup ---
+    # --- Game window detection ---
+    window_region = None
+    detected_game_name = None
+
+    # Initialize window detector if window detection is enabled
+    if config.get("detect_window", True):
+        logger.info("Detecting game window...")
+        window_detector = WindowDetector(
+            model=args.model,
+            config=config.get("vision", {}),
+        )
+
+        # Wait for 3 seconds to allow the game to process
+        logger.info("Waiting for 3 seconds...")
+        time.sleep(3)
+        logger.info("Capturing screenshot for window detection...")
+
+        # Capture a screenshot for window detection
+        initial_screenshot = screenshot_capture.capture()
+
+        # Detect game window
+        window_region, detected_game_name = window_detector.detect_game_window(
+            initial_screenshot,
+            game_name=game_name,
+            prompt_context="",
+        )
+        if window_region:
+            screenshot_capture.region = window_region
+            logger.info(f"Game window region set to: {window_region}")
+        else:
+            logger.warning(
+                "Could not detect game window region. Using full screen.")
+
+        if detected_game_name:
+            logger.info(f"Detected game name: {detected_game_name}")
+            # Optionally update config or runtime state with detected game name
+    # --- End game window detection ---
 
     # Initialize image analyzer with screenshot capture for frame extraction
-    logger.info(f"Setting up image analyzer for game: {game_name}")
-    
-    # Add the game_name to the game_config to ensure it's properly identified
-    game_config["name"] = game_name
-    
     image_analyzer = ImageAnalyzer(
         model=args.model,
-        config=config,  # Pass the full config instead of just the vision section
+        config=config.get("vision", {}),
         game_config=game_config,
         screenshot_capture=screenshot_capture,
     )
 
     # Initialize session logger if enabled
-    session_log = None
     if not args.no_logging:
         logger.info(f"Initializing session logger in {args.log_dir}")
-        session_log = get_session_logger(log_dir=args.log_dir, game_name="Game AI")
+        get_session_logger(log_dir=args.log_dir, game_name=game_name)
 
-    # Initialize game interface
+    # Initialize game analyzer
+    logger.info("Initializing game analyzer")
+    game_analyzer = GameAnalyzer(config=game_config)
+    
+    # Initialize game controller
     logger.info("Initializing game controller")
-    # Create game controller but don't use it yet (will be used in future implementation)
-    _ = game_controller.GameController(config=game_config)
+    game_controller = GameController(config=game_config)
 
-    # Initialize TTS if enabled
-    tts_engine = None
-    if args.tts:
-        logger.info("Initializing text-to-speech")
-        tts_engine = voice_synthesizer.VoiceSynthesizer(config.get("tts", {}))
+    logger.info("Waiting for 5 seconds...")
+    time.sleep(5)
+    logger.info("OK, Start Capture!")
 
     # Main game loop
     try:
@@ -173,8 +194,8 @@ def main():
             image = screenshot_capture.capture()
 
             # Log screenshot if enabled
-            if session_log:
-                session_log.log_screenshot(image, turn=turn_count)
+            if not args.no_logging:
+                log_screenshot(image, turn=turn_count)
 
             # Analyze game state
             logger.debug("Analyzing game state")
@@ -186,19 +207,25 @@ def main():
             )
 
             # Log game state if enabled
-            if session_log:
-                session_log.log_game_state(game_state, turn=turn_count)
-
-            # TODO: Add agent decision making here
-
-            # Speak decision if TTS enabled
-            if tts_engine:
-                # TODO: Change this to actual agent thoughts/decisions
-                tts_engine.speak(f"Turn {turn_count} analysis complete.")
+            log_game_state(game_state, turn=turn_count)
+            
+            # Process game state through the game analyzer
+            logger.debug("Processing game state through GameAnalyzer")
+            game_state = game_analyzer.process_game_state(game_state, turn_number=turn_count)
+            
+            # Print monologue to console if available (after processing)
+            if "monologue" in game_state and game_state["monologue"]:
+                monologue = game_state["monologue"]
+                print(f"\nMonologue: {monologue}\n")
+                
+            # Execute game action if available in the game state
+            if "action" in game_state and game_state["action"]:
+                logger.info("Executing game action from analysis")
+                game_controller.execute_action(game_state["action"])
 
             # Wait for next turn (simulate taking an action)
             logger.debug("Waiting for next turn...")
-            time.sleep(3)
+            time.sleep(1)
 
     except KeyboardInterrupt:
         logger.info("Game interrupted by user")
