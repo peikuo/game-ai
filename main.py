@@ -54,7 +54,8 @@ def parse_args():
     parser.add_argument(
         "--tts",
         action="store_true",
-        help="Enable text-to-speech",
+        help="Enable text-to-speech for monologues",
+        default=True,
     )
     parser.add_argument(
         "--debug",
@@ -95,6 +96,10 @@ def main():
                 logger.debug(f"Game '{game_key}' config keys: {list(game_data.keys())}")
                 if 'prompts' in game_data:
                     logger.debug(f"Game '{game_key}' prompts: {list(game_data.get('prompts', {}).keys())}")
+        
+        # Log game_config
+        logger.debug(f"Game config: {game_config}")
+        logger.debug(f"TTS config: {game_config.get('tts', {})}")
     
     # Initialize the model_call module
     model_call.initialize(model_type=args.model, config=config)
@@ -105,9 +110,15 @@ def main():
     
     # Add the game name to the config to ensure it's available for all components
     game_config["current_game"] = game_name
-
+    
+    # Add TTS configuration from command line arguments
+    if "tts" not in game_config:
+        game_config["tts"] = {}
+    game_config["tts"]["enabled"] = args.tts
+    
     logger.info(f"Starting AI agent for game: {game_name}")
     logger.info(f"Using vision model: {args.model}")
+    logger.info(f"TTS enabled: {args.tts}")
 
     # Initialize screenshot capturer
     logger.info("Initializing screenshot capturer")
@@ -171,6 +182,7 @@ def main():
     # Initialize game analyzer
     logger.info("Initializing game analyzer")
     game_analyzer = GameAnalyzer(config=game_config)
+    logger.debug(f"TTS configuration: {game_config.get('tts', {})}")
     
     # Initialize game controller
     logger.info("Initializing game controller")
@@ -193,6 +205,9 @@ def main():
             logger.debug("Capturing screenshot")
             image = screenshot_capture.capture()
 
+            # Log command line arguments once per turn for debugging
+            logger.debug(f"Command line arguments: {args}")
+
             # Log screenshot if enabled
             if not args.no_logging:
                 log_screenshot(image, turn=turn_count)
@@ -212,17 +227,30 @@ def main():
             # Process game state through the game analyzer
             logger.debug("Processing game state through GameAnalyzer")
             game_state = game_analyzer.process_game_state(game_state, turn_number=turn_count)
-            
-            # Print monologue to console if available (after processing)
-            if "monologue" in game_state and game_state["monologue"]:
-                monologue = game_state["monologue"]
-                print(f"\nMonologue: {monologue}\n")
                 
-            # Execute game action if available in the game state
-            if "action" in game_state and game_state["action"]:
-                logger.info("Executing game action from analysis")
-                game_controller.execute_action(game_state["action"])
-
+            # Execute game action if available in the game state using the object-oriented approach
+            # Access the game state through the _obj property
+            game_obj = game_state.get('_obj')
+            if game_obj and hasattr(game_obj, 'action_analysis'):
+                action_analysis = game_obj.action_analysis
+                if hasattr(action_analysis, 'simple') and action_analysis.simple:
+                    if hasattr(action_analysis, 'action') and action_analysis.action:
+                        action = action_analysis.action
+                        # Convert action object back to dict for the controller
+                        action_dict = {}
+                        for attr in dir(action):
+                            if not attr.startswith('_'):
+                                action_dict[attr] = getattr(action, attr)
+                        
+                        logger.info(f"Executing game action from analysis: {action_dict}")
+                        game_controller.execute_action(action_dict)
+                    else:
+                        logger.warning("Simple action indicated but no action object found")
+                else:
+                    logger.info("No simple action to execute in this turn")
+            else:
+                logger.info("No action_analysis found in game state object")
+            
             # Wait for next turn (simulate taking an action)
             logger.debug("Waiting for next turn...")
             time.sleep(1)
