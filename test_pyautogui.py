@@ -30,11 +30,21 @@ except ImportError:
     logger.error("PyAutoGUI is not installed. Install with: pip install pyautogui")
     sys.exit(1)
 
+
 def get_screen_info():
     """Get and display screen information"""
     width, height = pyautogui.size()
     logger.info(f"Screen resolution: {width}x{height}")
     return width, height
+
+
+def test_190_394_info():
+    time.sleep(3)
+    pyautogui.moveTo(1, 1, duration=1)
+    pyautogui.moveTo(190, 394, duration=2)
+    pyautogui.moveTo(260, 455, duration=2)
+    pyautogui.click(x=260, y=455, button="left")
+
 
 def test_mouse_movement():
     """Test basic mouse movement"""
@@ -159,18 +169,20 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     logger.info("Starting PyAutoGUI test")
+
+    test_190_394_info()
     
-    # Get screen information
-    screen_width, screen_height = get_screen_info()
+    # # Get screen information
+    # screen_width, screen_height = get_screen_info()
     
-    # Test mouse movement
-    test_mouse_movement()
+    # # Test mouse movement
+    # test_mouse_movement()
     
-    # Test mouse clicking
-    test_mouse_click(click_test=args.click)
+    # # Test mouse clicking
+    # test_mouse_click(click_test=args.click)
     
-    # Create test window if requested
-    if args.window:
-        create_test_window()
+    # # Create test window if requested
+    # if args.window:
+    #     create_test_window()
     
     logger.info("PyAutoGUI test completed")

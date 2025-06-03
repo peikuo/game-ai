@@ -8,20 +8,12 @@ can be configured for different games.
 
 import json
 import logging
-import os
-import re
-import time
-from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Optional, Union, Any
 
-import numpy as np
 from PIL import Image
 from pydantic import BaseModel, Field
-
 from src.utils.image_utils import encode_image_to_base64
 from src.utils import model_call
-from src.vision.frame_extractor import FrameExtractor
 
 # Pydantic models for structured response parsing
 class Position(BaseModel):
@@ -68,6 +60,7 @@ class GameState(BaseModel):
     other_players: Optional[List[Dict[str, Any]]] = None
     events: Optional[List[Dict[str, Any]]] = None
 
+
 class GameAnalysis(BaseModel):
     ui_elements: List[UIElement]
     game_areas: Optional[GameArea] = None
@@ -75,6 +68,7 @@ class GameAnalysis(BaseModel):
     action_analysis: ActionAnalysis
     raw_description: Optional[str] = None
     monologue: Optional[str] = None
+
 
 logger = logging.getLogger(__name__)
 
@@ -104,13 +98,8 @@ class ImageAnalyzer:
         self.game_config = game_config or {}
         self.screenshot_capture = screenshot_capture
 
-        # Initialize frame extractor if screenshot capture is provided
+        # Frame extractor functionality moved to scene_detect.py
         self.frame_extractor = None
-        if self.screenshot_capture:
-            frame_config = self.config.get("frame_extraction", {})
-            self.frame_extractor = FrameExtractor(
-                self.screenshot_capture, config=frame_config
-            )
 
         # Get current game configuration
         self.current_game = game_config.get("name", "vanity_fair")  # Use the game_name passed from main.py
@@ -165,8 +154,6 @@ class ImageAnalyzer:
         image,
         prompt=None,
         analysis_type="game_state",
-        check_animation=False,
-        region_name="full_screen",
     ):
         """
         Analyze a game screenshot.
@@ -180,39 +167,7 @@ class ImageAnalyzer:
         Returns:
             dict: Analysis results including game state information
         """
-        # Check for animation if requested and frame extractor is available
-        if check_animation and self.frame_extractor and self.screenshot_capture:
-            # First check if the screen is animating
-            if (
-                self.screenshot_capture.previous_frames and
-                len(self.screenshot_capture.frame_diffs) >= 2
-            ):
-                avg_diff = sum(self.screenshot_capture.frame_diffs) / len(
-                    self.screenshot_capture.frame_diffs
-                )
-                if avg_diff > self.screenshot_capture.change_threshold:
-                    logger.info(
-                        "Animation detected with average difference: %.4f", avg_diff
-                    )
-
-                    # Process the animation
-                    animation_prompt = self.game_prompts.get("animation", None)
-                    animation_result = self.frame_extractor.process_animation(
-                        region_name, prompt=animation_prompt
-                    )
-
-                    if animation_result.get("status") == "success":
-                        logger.info("Successfully analyzed animation sequence")
-                        return {
-                            "type": "animation",
-                            "analysis": animation_result.get("analysis"),
-                            "key_frame_count": animation_result.get(
-                                "key_frame_count", 0
-                            ),
-                            "total_frame_count": animation_result.get(
-                                "total_frame_count", 0
-                            ),
-                        }
+        # Animation detection moved to scene_detect.py
 
         try:
             # Prepare image for analysis
@@ -370,25 +325,17 @@ class ImageAnalyzer:
                 "action": None
             }
         }
-        
-        # Extract key information using simple heuristics
-        sections = {
-            "ui_elements": ["button", "menu", "icon", "clickable", "element"],
-            "game_state": ["phase", "turn", "player", "board", "resources"],
-            "action_analysis": ["action", "simple", "complex", "click", "press"],
-            "game_areas": ["board", "player area", "controls"]
-        }
-        
+
         # Look for specific patterns in the text
         lines = response_text.split("\n")
-        
+
         # Try to identify if the response mentions a simple action
         for line in lines:
             if ("simple" in line.lower() and 
                     ("true" in line.lower() or "yes" in line.lower())):
                 result["action_analysis"]["simple"] = True
                 result["action_analysis"]["explanation"] = line.strip()
-            
+
             # Try to extract coordinates for clicking
             if "click" in line.lower() and any(c.isdigit() for c in line):
                 # Look for x=123, y=456 pattern or similar

@@ -108,21 +108,15 @@ class GameController:
         Returns:
             bool: True if successful
         """
-        x = action.get("x")
-        y = action.get("y")
+        # add 60 fix the inaccuracy of LLM recognize
+        x = action.get("x") + 70
+        y = action.get("y") + 70
         button = action.get("button", "left")
 
         if x is None or y is None:
             logger.error("Click action missing x or y coordinates")
             return False
 
-        # Apply Mac scaling if needed
-        if platform.system() == 'Darwin' and hasattr(self, 'scale_factor'):
-            x, y = self._apply_mac_scaling(x, y)
-            logger.debug(f"Adjusted coordinates for Mac scaling: ({x}, {y})")
-
-        logger.debug("Clicking at (%s, %s) with %s button", x, y, button)
-        
         if PYAUTOGUI_AVAILABLE:
             try:
                 # Get screen dimensions
