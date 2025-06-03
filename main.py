@@ -1,21 +1,26 @@
 #!/usr/bin/env python
 """
-Main entry point for the Game AI Agent.
+Main entry point for the game AI agent.
+Handles command line arguments, configuration loading, and the main game loop.
 """
+
 import argparse
 import logging
 import os
+import sys
 import time
+import mss
+from typing import Dict, Any
 
-# Import project modules
 from src.capture.screenshot import ScreenCapturer
 from src.game_interface.game_controller import GameController
 from src.game_player.game_analyzer import GameAnalyzer
+from src.game_player.game_state import GameStateObject, Action
 from src.utils.config_loader import load_config
-from src.utils.log_utils import setup_logging, get_session_logger, log_screenshot, log_game_state
+from src.utils.log_utils import setup_logging, log_screenshot, log_game_state, get_session_logger
 from src.utils import model_call
 from src.vision.image_analyzer import ImageAnalyzer
-from src.vision.window_detector import WindowDetector
+# Window detection removed - using full screen capture exclusively
 
 logger = logging.getLogger(__name__)
 
@@ -129,42 +134,13 @@ def main():
     screenshot_capture = ScreenCapturer(config=screenshot_config)
 
     # --- Game window detection ---
-    window_region = None
-    detected_game_name = None
-
-    # Initialize window detector if window detection is enabled
-    if config.get("detect_window", True):
-        logger.info("Detecting game window...")
-        window_detector = WindowDetector(
-            model=args.model,
-            config=config.get("vision", {}),
-        )
-
-        # Wait for 3 seconds to allow the game to process
-        logger.info("Waiting for 3 seconds...")
-        time.sleep(3)
-        logger.info("Capturing screenshot for window detection...")
-
-        # Capture a screenshot for window detection
-        initial_screenshot = screenshot_capture.capture()
-
-        # Detect game window
-        window_region, detected_game_name = window_detector.detect_game_window(
-            initial_screenshot,
-            game_name=game_name,
-            prompt_context="",
-        )
-        if window_region:
-            screenshot_capture.region = window_region
-            logger.info(f"Game window region set to: {window_region}")
-        else:
-            logger.warning(
-                "Could not detect game window region. Using full screen.")
-
-        if detected_game_name:
-            logger.info(f"Detected game name: {detected_game_name}")
-            # Optionally update config or runtime state with detected game name
-    # --- End game window detection ---
+    # Using full screen capture exclusively as per architectural decision
+    logger.info("Using full screen capture exclusively (no window detection)")
+    # Get screen dimensions using mss
+    with mss.mss() as sct:
+        monitor = sct.monitors[1]  # Primary monitor
+        screen_width, screen_height = monitor["width"], monitor["height"]
+        logger.info(f"Screen dimensions: {screen_width}x{screen_height}")
 
     # Initialize image analyzer with screenshot capture for frame extraction
     image_analyzer = ImageAnalyzer(
@@ -228,28 +204,25 @@ def main():
             logger.debug("Processing game state through GameAnalyzer")
             game_state = game_analyzer.process_game_state(game_state, turn_number=turn_count)
                 
-            # Execute game action if available in the game state using the object-oriented approach
-            # Access the game state through the _obj property
+            # Execute game action if available in the game state using the GameStateObject
+            # Access the game state through the _obj property which is now a proper GameStateObject
             game_obj = game_state.get('_obj')
-            if game_obj and hasattr(game_obj, 'action_analysis'):
+            if game_obj and isinstance(game_obj, GameStateObject):
                 action_analysis = game_obj.action_analysis
-                if hasattr(action_analysis, 'simple') and action_analysis.simple:
-                    if hasattr(action_analysis, 'action') and action_analysis.action:
-                        action = action_analysis.action
-                        # Convert action object back to dict for the controller
-                        action_dict = {}
-                        for attr in dir(action):
-                            if not attr.startswith('_'):
-                                action_dict[attr] = getattr(action, attr)
-                        
-                        logger.info(f"Executing game action from analysis: {action_dict}")
-                        game_controller.execute_action(action_dict)
-                    else:
-                        logger.warning("Simple action indicated but no action object found")
+                if action_analysis.simple and action_analysis.action:
+                    action = action_analysis.action
+                    # Convert action to dictionary using the to_dict method
+                    action_dict = action.to_dict()
+                    
+                    logger.info(f"Executing game action from analysis: {action_dict}")
+                    game_controller.execute_action(action_dict)
                 else:
-                    logger.info("No simple action to execute in this turn")
+                    if not action_analysis.simple:
+                        logger.info("No simple action to execute in this turn")
+                    elif not action_analysis.action:
+                        logger.warning("Simple action indicated but no action object found")
             else:
-                logger.info("No action_analysis found in game state object")
+                logger.info("No GameStateObject found in game state")
             
             # Wait for next turn (simulate taking an action)
             logger.debug("Waiting for next turn...")
