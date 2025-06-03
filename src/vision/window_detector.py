@@ -6,7 +6,7 @@ from typing import Optional, Tuple, Dict
 from PIL import Image
 from pydantic import BaseModel, Field, model_validator
 
-from src.utils.image_utils import process_screenshot, encode_image_to_base64, scale_coordinates
+from src.utils.image_utils import encode_image_to_base64, scale_coordinates
 from src.utils import model_call
 from src.utils.config_loader import load_api_config, load_config, PROJECT_ROOT
 
@@ -150,22 +150,19 @@ class WindowDetector:
         original_path = screenshots_dir / f"original_{timestamp}.png"
         screenshot.save(original_path)
         logger.info(f"Original screenshot saved to: {original_path}")
-        
-        # Process and optimize the screenshot
-        processed_image = process_screenshot(screenshot)
-        
+
         # Save the processed image before resizing
         processed_path = screenshots_dir / f"processed_{timestamp}.png"
-        processed_image.save(processed_path)
+        screenshot.save(processed_path)
         logger.info(f"Processed screenshot saved to: {processed_path}")
         
         # Get original image dimensions before resizing
-        original_size = processed_image.size
+        original_size = screenshot.size
         logger.info(f"Original image dimensions: {original_size[0]}x{original_size[1]}")
         
         # Encode the image to base64 (this will resize it)
         max_width = 1024  # Store this for scaling coordinates later
-        base64_image = encode_image_to_base64(processed_image, max_width=max_width, optimize=True)
+        base64_image = encode_image_to_base64(screenshot, max_width=max_width, optimize=True)
         
         # Save the resized/optimized image used for the model
         # First, decode the base64 image back to a PIL Image

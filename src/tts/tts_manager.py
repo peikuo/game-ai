@@ -52,7 +52,18 @@ class TTSManager:
             config: Dictionary containing configuration parameters
         """
         self.config = config
-        self.audio_config = config.get("audio", {})
+
+        # Handle both full config and audio-only config
+        if "audio" in config:
+            # Full config with audio section
+            self.audio_config = config.get("audio", {})
+        else:
+            # Directly passed audio config
+            self.audio_config = config
+            
+        logger.info(f"TTS config: {self.audio_config}")
+        
+        # Extract configuration values with defaults
         self.voice_id = self.audio_config.get("voice", self.DEFAULT_VOICE)
         self.repo_id = self.audio_config.get("tts_model", self.DEFAULT_REPO_ID)
         self.temp_folder = Path(self.audio_config.get("temp_folder", "temp_audio"))

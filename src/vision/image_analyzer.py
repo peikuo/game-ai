@@ -157,13 +157,6 @@ class ImageAnalyzer:
             except Exception as e:
                 logger.error(f"Error opening image from path: {e}")
                 return None
-                
-        # Process the image for analysis if not already optimized
-        # if isinstance(image, Image.Image) and not image.info.get('optimized', False):
-        #     logger.debug("Processing image for analysis")
-        #     # Use image_utils.py for all image processing
-        #     image = optimize_image(image)
-        #     image = process_screenshot(image)
             
         return image
 

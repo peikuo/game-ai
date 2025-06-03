@@ -19,49 +19,6 @@ STANDARD_MAX_WIDTH = 1280
 STANDARD_MAX_HEIGHT = 720
 
 
-def process_screenshot(screenshot):
-    """
-    Process a screenshot immediately after capture.
-    This is the main entry point for screenshot processing that should be used
-    by other modules.
-
-    Args:
-        screenshot: PIL Image of the screenshot
-
-    Returns:
-        The original image without optimization
-        
-    Raises:
-        ValueError: If screenshot is None or invalid
-        Exception: For any other errors during processing
-    """
-    if screenshot is None:
-        error_msg = "Cannot process None screenshot"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
-        
-    try:
-        # Log original size
-        if logger.level <= logging.DEBUG:
-            logger.debug("Original screenshot size: %dx%d", screenshot.width, screenshot.height)
-    
-        # MODIFIED: Skip optimization and return original image
-        logger.info(f"Skipping image optimization - returning original image {screenshot.width}x{screenshot.height}")
-        
-        # Keep track of image dimensions for later reference
-        screenshot.original_size = (screenshot.width, screenshot.height)
-    
-        return screenshot
-    except AttributeError as e:
-        error_msg = f"Invalid screenshot object: {str(e)}"
-        logger.error(error_msg)
-        raise ValueError(error_msg) from e
-    except Exception as e:
-        error_msg = f"Error processing screenshot: {str(e)}"
-        logger.error(error_msg)
-        raise Exception(error_msg) from e
-
-
 def optimize_image(
     image: Image.Image,
     max_width: Optional[int] = None,
@@ -288,7 +245,8 @@ def truncate_base64(base64_str, max_length=50):
 
 def encode_image_to_base64(image, max_width=None, optimize=False, force_optimize=False):
     """
-    Encode an image to base64 string without resizing.
+    Encode an image to base64 string with intelligent compression without resizing dimensions.
+    Automatically selects the best compression format based on image characteristics.
     
     Args:
         image: PIL Image or path to image
@@ -305,43 +263,92 @@ def encode_image_to_base64(image, max_width=None, optimize=False, force_optimize
         Exception: For any other errors during encoding
     """
     if image is None:
-        error_msg = "Cannot encode None image to base64"
+        error_msg = "Cannot encode None image"
         logger.error(error_msg)
         raise ValueError(error_msg)
     
     try:
-        # Load image if it's a path
-        if isinstance(image, str) or hasattr(image, 'read'):
+        # If image is a string, assume it's a path and open the image
+        if isinstance(image, str):
             try:
                 image = Image.open(image)
             except Exception as e:
-                error_msg = f"Failed to open image: {str(e)}"
+                error_msg = f"Error opening image from path: {str(e)}"
                 logger.error(error_msg)
                 raise IOError(error_msg) from e
+        
+        # Ensure image is a PIL Image
+        if not isinstance(image, Image.Image):
+            error_msg = f"Expected PIL Image, got {type(image)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         # Make a copy to avoid modifying the original
         img = image.copy()
         
-        # MODIFIED: Use original image size without resizing
-        logger.info(f"Using original image size: {img.width}x{img.height}")
+        # Calculate original image dimensions and size
+        original_width = img.width
+        original_height = img.height
+        original_pixels = original_width * original_height
         
-        # Store the original size in the image info for reference
-        if not hasattr(img, 'info'):
-            img.info = {}
-        img.info['original_size'] = (img.width, img.height)
+        # Estimate original uncompressed size (assuming 3 bytes per pixel for RGB)
+        original_bytes = original_pixels * (4 if img.mode == 'RGBA' else 3)
+        original_size_kb = original_bytes / 1024
+        
+        logger.info(f"Original image: {original_width}x{original_height} pixels, ~{original_size_kb:.2f} KB uncompressed")
+        
+        # Try both PNG and JPEG compression to determine which is smaller
+        png_buffer = io.BytesIO()
+        jpeg_buffer = io.BytesIO()
+        
+        # Check if image has alpha channel (transparency)
+        has_transparency = img.mode == 'RGBA' or 'transparency' in img.info
+        
+        # Always try PNG compression (good for screenshots with text/UI elements)
+        img.save(png_buffer, format="PNG", optimize=True, compress_level=9)
+        png_size = len(png_buffer.getvalue())
+        
+        # Try JPEG if no transparency
+        jpeg_size = float('inf')  # Default to infinity if JPEG not used
+        if not has_transparency:
+            # Convert to RGB if needed (JPEG doesn't support other modes)
+            if img.mode != 'RGB':
+                rgb_img = img.convert('RGB')
+            else:
+                rgb_img = img
+                
+            # Use quality=40 for game screenshots (good balance for game visuals)
+            rgb_img.save(jpeg_buffer, format="JPEG", optimize=True, quality=40)
+            jpeg_size = len(jpeg_buffer.getvalue())
+        
+        # Choose the smaller format
+        if jpeg_size < png_size and not has_transparency:
+            buffer = jpeg_buffer
+            format_used = "JPEG"
+            img_bytes = buffer.getvalue()
+        else:
+            buffer = png_buffer
+            format_used = "PNG"
+            img_bytes = buffer.getvalue()
+        
+        # Get size information for logging
+        compressed_size_bytes = len(img_bytes)
+        compressed_size_kb = compressed_size_bytes / 1024
+        
+        # Calculate compression ratio based on original byte estimate
+        compression_ratio = original_bytes / compressed_size_bytes
+        size_reduction_percent = (1 - (compressed_size_bytes / original_bytes)) * 100
+        
+        # Log the image size and compression details
+        logger.info(f"Before compression: {original_width}x{original_height} pixels, ~{original_size_kb:.2f} KB")
+        logger.info(f"After compression: {format_used}, {compressed_size_kb:.2f} KB, "
+                   f"reduced by {size_reduction_percent:.1f}%, ratio: {compression_ratio:.2f}x")
         
         # Encode to base64
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        base64_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        
-        # Log a truncated version of the base64 string
-        logger.debug("Encoded image to base64: %s", truncate_base64(base64_str))
+        base64_str = base64.b64encode(img_bytes).decode('utf-8')
         
         return base64_str
-    except (ValueError, IOError) as e:
-        # Let these specific exceptions propagate up
-        raise
+    
     except Exception as e:
         error_msg = f"Error encoding image to base64: {str(e)}"
         logger.error(error_msg)

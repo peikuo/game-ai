@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 """
-Game analyzer module for processing game state and generating responses.
-Handles monologue generation and TTS integration.
+Game analyzer module for analyzing game state and processing monologues.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Dict, Any, Optional, Union
 
-from src.tts.tts_manager import TTSManager
 from src.utils.log_utils import log_monologue
+from src.tts.tts_manager import TTSManager
 from src.game_player.game_state import GameStateObject, dict_to_game_state_object
 
+# Set up logger
 logger = logging.getLogger(__name__)
 
 
@@ -19,67 +19,68 @@ class GameAnalyzer:
     Analyzes game state and processes monologues.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], tts_manager=None):
         """
         Initialize the game analyzer.
-        
+
         Args:
             config: Configuration dictionary
+            tts_manager: Optional TTS manager instance
         """
         self.config = config
-        
-        # Initialize TTS if enabled in config
-        self.tts_manager = None
-        if config.get("tts", {}).get("enabled", False):
-            logger.info("Initializing text-to-speech for GameAnalyzer")
-            self.tts_manager = TTSManager(config.get("tts", {}))
-        else:
-            logger.info("TTS disabled in config")
+        self.tts_manager = tts_manager
 
-    # Removed _convert_to_object method as we now use the dedicated GameStateObject class
-    
-    def process_game_state(self, game_state: Dict[str, Any], turn_number: Optional[int] = None) -> Dict[str, Any]:
+    def analyze(self, game_state: Dict[str, Any], turn_number: Optional[int] = None) -> Dict[str, Any]:
         """
-        Process the game state and return any updates.
+        Analyze the game state and determine the next action.
         
         Args:
             game_state: Game state dictionary from the vision model
-            turn_number: Optional turn number for logging
             
         Returns:
-            Updated game state dictionary with added GameStateObject
+            Action dictionary to be executed by the game controller
         """
-        logger.debug(f"Processing game state for turn {turn_number}")
-        
-        # Convert game state to a proper GameStateObject for easier access
-        game_state_obj = dict_to_game_state_object(game_state)
-        logger.debug(f"Converted game state to GameStateObject with attributes: {dir(game_state_obj)}")
-        
-        # Process monologue if available
-        if game_state_obj.monologue:
-            self._process_monologue(game_state, turn_number)
-        
-        # Add the object as a property of the dictionary for easier access
-        game_state['_obj'] = game_state_obj
-        
-        # Additional game state processing can be added here
-        
-        return game_state
+        logger.info("Analyzing game state to determine next action")
 
-    def _process_monologue(self, game_state: Dict[str, Any], turn_number: Optional[int] = None) -> None:
+        # Convert dictionary to GameStateObject for better type safety
+        game_state_obj = dict_to_game_state_object(game_state)
+        
+        if game_state_obj.monologue:
+            self._process_monologue(game_state_obj, turn_number)
+        
+        # Check if there's a simple action already determined by the vision model
+        if game_state_obj.action_analysis and game_state_obj.action_analysis.simple:
+            if game_state_obj.action_analysis.action:
+                logger.info(f"Using simple action from vision model: {game_state_obj.action_analysis.action}")
+                # Convert Action object to dictionary for GameController
+                return game_state_obj.action_analysis.action.to_dict()
+
+        # If no simple action is available, we need more complex decision making
+        # This could be expanded with more sophisticated game logic
+        logger.info("No simple action available, using default action")
+
+        return None
+
+    def _process_monologue(self, game_state: Union[Dict[str, Any], GameStateObject], turn_number: Optional[int] = None) -> None:
         """
         Process monologue text from game state, play TTS audio, and log it.
         
         Args:
-            game_state: Game state containing monologue
+            game_state: Game state containing monologue (either dict or GameStateObject)
             turn_number: Current turn number
         """
-        if "monologue" in game_state and game_state["monologue"]:
-            monologue = game_state["monologue"]
+        # Handle both dictionary and GameStateObject inputs
+        if isinstance(game_state, dict):
+            monologue = game_state.get("monologue")
+            raw_response = game_state.get("raw_response")
+        else:
+            monologue = game_state.monologue
+            raw_response = game_state.raw_response
+        
+        if monologue:
             logger.info(f"Processing monologue: {monologue}")
             
             # Log monologue using centralized logging function
-            raw_response = game_state.get("raw_response")
             log_monologue(monologue, raw_response=raw_response, turn=turn_number)
             logger.info("Monologue recorded in session log")
             

@@ -6,7 +6,6 @@ import argparse
 import logging
 import time
 import os
-from pathlib import Path
 
 # Import project modules
 from src.capture.screenshot import ScreenCapturer
@@ -99,11 +98,6 @@ def main():
         "use_full_screen": True  # Enable full screen capture
     }
     screenshot_capture = ScreenCapturer(config=screenshot_config)
-    
-    # Wait for 3 seconds to allow the game to start
-    logger.info("Waiting for 5 seconds to allow the game to start")
-    time.sleep(5)
-    logger.info("OK， Start working!")
 
     # Add the game_name to the game_config to ensure it's properly identified
     game_config["name"] = game_name
@@ -115,21 +109,27 @@ def main():
         game_config=game_config,
         screenshot_capture=screenshot_capture,
     )
+    logger.info("Image analyzer inited")
 
     # Initialize session logger if enabled
-    session_log = None
-    if not args.no_logging:
-        session_log = get_session_logger(log_dir=args.log_dir, game_name="Game AI")
+    session_log = get_session_logger(log_dir=args.log_dir, game_name="Game AI")
+    logger.info("Session logger inited")
 
     # Initialize TTS Manager if enabled
-    tts_manager = None
-    if args.tts:
-        tts_manager = TTSManager(config)
-        
+
+    tts_manager = TTSManager(config.get("audio", {}))
+    logger.info("TTS inited and enabled")        
+
     # Create game controller and analyzer
     game_controller = GameController(config=game_config)
+    logger.info("Game controller inited")
     game_analyzer = GameAnalyzer(config=game_config, tts_manager=tts_manager)
+    logger.info("Game analyzer inited")
 
+    # Wait for 3 seconds to allow the game to start
+    logger.info("Waiting for 5 seconds to allow the game to start")
+    time.sleep(5)
+    logger.info("OK， Start working!")
     # Main game loop
     try:
         turn_count = 0
@@ -179,8 +179,8 @@ def main():
                     session_log.log_game_state(monologue_data, turn=turn_count)
 
             # Use game analyzer to determine next action
-            action = game_analyzer.analyze(game_state)
-            
+            action = game_analyzer.analyze(game_state, turn_number=turn_count)
+
             # Execute the determined action
             if action:
                 logger.info(f"Executing action: {action}")

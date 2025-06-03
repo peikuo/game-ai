@@ -127,7 +127,7 @@ class GameController:
         if PYAUTOGUI_AVAILABLE:
             try:
                 # Move to position first (more reliable)
-                pyautogui.moveTo(x, y, duration=0.2)
+                pyautogui.moveTo(x, y, duration=1)
                 # Then click
                 pyautogui.click(x=x, y=y, button=button)
                 logger.info(f"PyAutoGUI clicked at ({x}, {y}) with {button} button")

@@ -11,8 +11,6 @@ import mss
 import numpy as np
 from PIL import Image
 
-from src.utils.image_utils import process_screenshot
-
 logger = logging.getLogger(__name__)
 
 
@@ -117,10 +115,6 @@ class ScreenCapturer:
                 screenshot = Image.frombytes(
                     "RGB", sct_img.size, sct_img.bgra, "raw", "BGRX"
                 )
-
-                # Process the screenshot using the centralized utility function
-                # This handles all optimization in one place - all images are resized to 1280x720
-                screenshot = process_screenshot(screenshot)
 
                 # Mark as optimized for downstream components
                 screenshot.info['optimized'] = True

@@ -663,9 +663,13 @@ class HTMLSessionLogger:
                 game_state_html.append('<div class="llm-response">')
                 game_state_html.append('<h3>LLM Response</h3>')
                 # Fix the f-string with backslash issue
-                raw_desc = game_state["raw_description"]
-                formatted_desc = raw_desc.replace("\n", "<br>")
-                game_state_html.append(f'<p>{formatted_desc}</p>')
+                raw_desc = game_state.get("raw_description")
+                # Check if raw_desc is not None before calling replace
+                if raw_desc is not None:
+                    formatted_desc = raw_desc.replace("\n", "<br>")
+                    game_state_html.append(f'<p>{formatted_desc}</p>')
+                else:
+                    game_state_html.append('<p><em>No description available</em></p>')
                 game_state_html.append('</div>')
             
             # Add structured analysis
@@ -800,6 +804,11 @@ def log_game_state(game_state, turn=None):
         game_state (dict): Game state analysis from the vision model
         turn: Optional turn number to associate with the game state
     """
+    # Add defensive check for None game_state
+    if game_state is None:
+        logger.warning(f"Attempted to log None game state on turn {turn}")
+        game_state = {"error": "No game state available", "raw_description": None}
+    
     logger.info("Game State on Turn: " + str(turn), game_state)
     
     global _session_logger
