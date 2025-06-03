@@ -6,7 +6,10 @@ Handles execution of game actions through input simulation.
 
 import logging
 import time
-from typing import Any, Dict
+import platform
+import subprocess
+import json
+from typing import Any, Dict, Tuple
 
 try:
     import pyautogui
@@ -46,6 +49,21 @@ class GameController:
             pyautogui.FAILSAFE = True  # Move mouse to corner to abort
             screen_width, screen_height = pyautogui.size()
             logger.info(f"PyAutoGUI detected screen size: {screen_width}x{screen_height}")
+            
+            # Detect Mac display scaling
+            self.scale_factor = 1.0
+            if platform.system() == 'Darwin':
+                # On Mac, we'll use a fixed scale factor based on common Retina display settings
+                # Default to 2.0 for Retina displays
+                self.scale_factor = self._detect_mac_scale_factor()
+                logger.info(f"Mac display scale factor set to: {self.scale_factor}")
+                
+                # Get the actual screen resolution for verification
+                actual_width, actual_height = pyautogui.size()
+                logger.info(f"Actual screen resolution: {actual_width}x{actual_height}")
+                
+                # Log the effective resolution after scaling
+                logger.info(f"Effective resolution with scaling: {int(actual_width/self.scale_factor)}x{int(actual_height/self.scale_factor)}")
         
         logger.info("GameController initialized for %s", self.game_name)
 
@@ -98,6 +116,11 @@ class GameController:
         if x is None or y is None:
             logger.error("Click action missing x or y coordinates")
             return False
+
+        # Apply Mac scaling if needed
+        if platform.system() == 'Darwin' and hasattr(self, 'scale_factor'):
+            x, y = self._apply_mac_scaling(x, y)
+            logger.debug(f"Adjusted coordinates for Mac scaling: ({x}, {y})")
 
         logger.debug("Clicking at (%s, %s) with %s button", x, y, button)
         
@@ -194,14 +217,20 @@ class GameController:
         if None in (start_x, start_y, end_x, end_y):
             logger.error("Drag action missing required coordinates")
             return False
+            
+        # Apply Mac scaling if needed
+        if platform.system() == 'Darwin' and hasattr(self, 'scale_factor'):
+            start_x, start_y = self._apply_mac_scaling(start_x, start_y)
+            end_x, end_y = self._apply_mac_scaling(end_x, end_y)
+            logger.debug(f"Adjusted drag coordinates for Mac scaling")
 
         logger.debug(
             "Dragging from (%s, %s) to (%s, %s)",
             start_x,
             start_y,
             end_x,
-            end_y)
-            
+            end_y,
+        )    
         if PYAUTOGUI_AVAILABLE:
             try:
                 # Move to start position first
@@ -243,6 +272,53 @@ class GameController:
         time.sleep(self.action_delay)
         return True
 
+    def _detect_mac_scale_factor(self) -> float:
+        """
+        Detect the display scaling factor on macOS using a simple approach.
+        
+        Returns:
+            float: The scaling factor (typically 1.0, 1.5, or 2.0 on Retina displays)
+        """
+        try:
+            # Get the screen resolution using PyAutoGUI
+            screen_width, screen_height = pyautogui.size()
+            
+            # Common MacBook resolutions and their likely scale factors
+            # These are typical values for common Mac displays
+            if screen_width >= 3000 or screen_height >= 1800:  # Retina 5K/6K displays
+                return 2.0
+            elif screen_width >= 2500 or screen_height >= 1600:  # Retina displays
+                return 2.0
+            elif screen_width >= 1400 or screen_height >= 900:  # Standard Retina MacBooks
+                return 2.0
+            else:
+                return 1.0
+                
+        except Exception as e:
+            logger.error(f"Error detecting Mac scale factor: {e}")
+            # Default to 2.0 for most modern Macs with Retina displays
+            return 2.0
+        
+    def _apply_mac_scaling(self, x: int, y: int) -> Tuple[int, int]:
+        """
+        Apply Mac display scaling to coordinates.
+        
+        Args:
+            x: X coordinate
+            y: Y coordinate
+            
+        Returns:
+            Tuple[int, int]: Scaled coordinates
+        """
+        if not hasattr(self, 'scale_factor') or self.scale_factor == 1.0:
+            return x, y
+            
+        # Apply the scaling factor to the coordinates
+        scaled_x = int(x * self.scale_factor)
+        scaled_y = int(y * self.scale_factor)
+        
+        return scaled_x, scaled_y
+    
     def cleanup(self) -> None:
         """
         Perform cleanup operations when shutting down the controller.

@@ -8,13 +8,18 @@ can be configured for different games.
 
 import json
 import logging
-from typing import List, Dict, Any, Optional, Tuple, Union
+import os
+import re
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Union, Any
 
+import numpy as np
 from PIL import Image
 from pydantic import BaseModel, Field
 
-from src.utils.config_loader import get_api_config
-from src.utils.image_utils import process_screenshot, encode_image_to_base64, optimize_image
+from src.utils.image_utils import encode_image_to_base64
 from src.utils import model_call
 from src.vision.frame_extractor import FrameExtractor
 
@@ -108,37 +113,29 @@ class ImageAnalyzer:
             )
 
         # Get current game configuration
-        self.current_game = game_config.get("current_game", "vanity_fair")  # Use the game_name passed from main.py
+        self.current_game = game_config.get("name", "vanity_fair")  # Use the game_name passed from main.py
         logger.info(f"Initializing image analyzer for game: {self.current_game}")
-
-        # Check if we have prompts directly in game_config or need to get them from config.games
-        if "prompts" in game_config:
-            # Use prompts directly from game_config
-            logger.info("Using prompts directly from game_config")
-            self.game_name = game_config.get("name", "Vanity Fair: The Pursuit")
-            self.game_prompts = game_config.get("prompts", {})
-        else:
-            # Fall back to getting prompts from config.games
-            logger.info("Falling back to prompts from config.games")
-            # Get the games dictionary
-            self.games = config.get("games", {})
-            games_list = list(self.games.keys())
-            logger.info(f"Available games in config: {games_list}")
-    
-            # Load game-specific configuration
-            self.game_settings = self.games.get(self.current_game, {}) or self.games.get("vanity_fair", {})
-            logger.info(f"Loaded game settings for: {self.current_game}")
-    
-            self.game_name = self.game_settings.get("name", "Vanity Fair: The Pursuit")
-            self.game_prompts = self.game_settings.get("prompts", {})
-
+        
+        # Get the games dictionary
+        self.games = config.get("games", {})
+        
+        # Log available games for debugging
+        logger.info(f"Available games in config: {list(self.games.keys())}")
+        
+        # Load game-specific configuration
+        self.game_settings = self.games.get(self.current_game, {}) or self.games.get("vanity_fair", {})
+        
+        # Explicitly log the game settings to help debug
+        logger.info(f"Loaded game settings for: {self.current_game}")
+        
+        self.game_name = self.game_settings.get("name", "Vanity Fair: The Pursuit")
+        self.game_prompts = self.game_settings.get("prompts", {})
+        
         # Log available prompts for this game
-        prompt_keys = list(self.game_prompts.keys())
-        logger.info(f"Available prompts for {self.game_name}: {prompt_keys}")
-        logger.debug(f"Game prompts content: {self.game_prompts}")
+        logger.info(f"Available prompts for {self.game_name}: {list(self.game_prompts.keys())}")
 
         # No need to initialize model_call as we're using the module directly
-
+        
         # Store model type and name for logging
         self.model_name = None
         logger.info(f"Using {self.model_type} model")
@@ -160,14 +157,14 @@ class ImageAnalyzer:
             except Exception as e:
                 logger.error(f"Error opening image from path: {e}")
                 return None
-        
+                
         # Process the image for analysis if not already optimized
         # if isinstance(image, Image.Image) and not image.info.get('optimized', False):
         #     logger.debug("Processing image for analysis")
         #     # Use image_utils.py for all image processing
         #     image = optimize_image(image)
         #     image = process_screenshot(image)
-    
+            
         return image
 
     def analyze(
@@ -227,53 +224,45 @@ class ImageAnalyzer:
         try:
             # Prepare image for analysis
             processed_image = self._prepare_image(image)
-    
-            # Encode the image to base64
-            base64_image = encode_image_to_base64(processed_image, max_width=1024, optimize=True)
-    
-            # If we have a game-specific prompt, use it; otherwise, use a generic fallback
-            prompt_type = analysis_type
-            prompt = self.game_prompts.get(
-                prompt_type, 
-                "Describe what you see in this game screenshot."
-            )
-            # Check if we need to use a fallback prompt
-            if prompt_type not in self.game_prompts:
-                logger.warning(
-                    f"⚠️ USING FALLBACK PROMPT - No {prompt_type} prompt found in "
-                    f"config for game: {self.current_game}"
-                )
-                prompt_keys = list(self.game_prompts.keys())
-                logger.warning(f"Available prompts in config: {prompt_keys}")
+            
+            # Encode the image to base64 without resizing
+            base64_image = encode_image_to_base64(processed_image)
+            
+            # If no prompt is provided, use the default game state prompt
+            if not prompt:
+                prompt = self.game_prompts.get(analysis_type, "Describe what you see in this game screenshot.")
+                if prompt == "Describe what you see in this game screenshot.":
+                    logger.warning(f"⚠️ USING FALLBACK PROMPT - No {analysis_type} prompt found in config for game: {self.current_game}")
+                    logger.warning(f"Available prompts in config: {list(self.game_prompts.keys())}")
+                else:
+                    logger.info(f"Using game-specific prompt for {analysis_type} from config")
             else:
-                logger.info(f"Using game-specific prompt for {analysis_type} from config")
-            if prompt is None:
                 logger.info(f"Using custom prompt for {analysis_type} (passed directly to analyze method)")
-    
+            
             # Log the full prompt
             logger.info(f"===== PROMPT FOR {analysis_type.upper()} =====\n{prompt}\n===== END PROMPT =====")
-    
+            
             # Validate that the prompt isn't empty or too basic
             if len(prompt) < 50:
                 logger.warning(f"Prompt seems too short (only {len(prompt)} chars). This may not provide enough context for good analysis.")
-    
+            
             # Log the first 100 characters of the prompt for verification
             prompt_preview = prompt[:100] + "..." if len(prompt) > 100 else prompt
             logger.info(f"Prompt preview: {prompt_preview}")
-    
+            
             # Prepare and call the vision model
             try:
                 # Ensure prompt includes the game name for better context
                 if self.game_name and self.game_name not in prompt:
                     prompt = f"Analyze this {self.game_name} screenshot: {prompt}"
                     logger.info(f"Added game name to prompt: {self.game_name}")
-        
+                
                 # Call vision model with prepared image and prompt
                 response = model_call.call_vision_model(base64_image, prompt)
             except Exception as e:
                 logger.error(f"Error calling vision model: {str(e)}")
                 return {"status": "error", "message": str(e)}
-    
+            
             if response.get("status") == "success":
                 # Parse the model's response
                 return self._parse_model_response(response.get("response_text", ""))
@@ -300,30 +289,30 @@ class ImageAnalyzer:
         # Clean up response text to ensure it's valid JSON
         # Sometimes the LLM might add markdown code blocks or extra text
         cleaned_text = self._clean_json_response(response_text)
-
+        
         # Try to parse as JSON
         try:
             logger.info("Attempting to parse response as JSON")
             json_data = json.loads(cleaned_text)
-    
+            
             try:
                 # Try to validate with our Pydantic model
                 logger.info("Validating JSON with GameAnalysis model")
                 game_analysis = GameAnalysis(**json_data)
                 logger.info(f"Successfully parsed response as GameAnalysis: {len(json_data)} fields found")
-        
+                
                 # Add the raw response for debugging
                 result = game_analysis.model_dump()
                 result["raw_response"] = response_text
-        
+                
                 # Log whether this is a simple action
                 if game_analysis.action_analysis.simple:
                     logger.info(f"Simple action detected: {game_analysis.action_analysis.action.type} at position {game_analysis.action_analysis.action.position if game_analysis.action_analysis.action.position else 'N/A'}")
                 else:
                     logger.info(f"Complex action: {game_analysis.action_analysis.explanation}")
-        
+                
                 return result
-        
+                
             except Exception as e:
                 logger.warning(f"Error validating JSON with Pydantic model: {str(e)}")
                 # If validation fails, return the raw JSON
@@ -332,7 +321,7 @@ class ImageAnalyzer:
                     "parsed_json": json_data,
                     "validation_error": str(e)
                 }
-        
+                
         except json.JSONDecodeError as e:
             logger.warning(f"Response is not valid JSON: {str(e)}")
             # Fall back to basic text parsing
@@ -346,30 +335,30 @@ class ImageAnalyzer:
             lines = text.split('\n')
             cleaned_lines = []
             in_code_block = False
-    
+            
             for line in lines:
                 if line.strip() in ['```json', '```']:
                     in_code_block = not in_code_block
                     continue
                 if in_code_block or not in_code_block and line.strip():
                     cleaned_lines.append(line)
-    
+            
             text = '\n'.join(cleaned_lines)
-
+        
         # Find JSON object boundaries
         start_idx = text.find('{')
         end_idx = text.rfind('}')
-
+        
         if start_idx != -1 and end_idx != -1:
             return text[start_idx:end_idx+1]
-
+        
         return text
     
     def _parse_text_response(self, response_text):
         """Fallback method to parse plain text responses."""
         import re
         logger.warning("Falling back to text-based parsing since response is not JSON")
-
+        
         # Create a structure similar to what we expect from JSON but built from text parsing
         result = {
             "raw_description": response_text,
@@ -388,7 +377,7 @@ class ImageAnalyzer:
                 "action": None
             }
         }
-
+        
         # Extract key information using simple heuristics
         sections = {
             "ui_elements": ["button", "menu", "icon", "clickable", "element"],
@@ -396,17 +385,17 @@ class ImageAnalyzer:
             "action_analysis": ["action", "simple", "complex", "click", "press"],
             "game_areas": ["board", "player area", "controls"]
         }
-
+        
         # Look for specific patterns in the text
         lines = response_text.split("\n")
-
+        
         # Try to identify if the response mentions a simple action
         for line in lines:
             if ("simple" in line.lower() and 
                     ("true" in line.lower() or "yes" in line.lower())):
                 result["action_analysis"]["simple"] = True
                 result["action_analysis"]["explanation"] = line.strip()
-    
+            
             # Try to extract coordinates for clicking
             if "click" in line.lower() and any(c.isdigit() for c in line):
                 # Look for x=123, y=456 pattern or similar
@@ -417,7 +406,7 @@ class ImageAnalyzer:
                         "position": [int(coords[0]), int(coords[1])]
                     }
                     result["action_analysis"]["simple"] = True
-
+        
         # Try to extract UI elements
         for line in lines:
             element_keywords = ["button", "icon", "menu", "element"]
@@ -426,7 +415,7 @@ class ImageAnalyzer:
                 # Try to extract a name and position
                 element_name = None
                 position = None
-        
+                
                 # Look for a name pattern like "Button: X" or "X button" 
                 name_pattern = (r'["\']([^"\'\.]+)["\']|'
                                r'Button:\s*([^\,\.]+)|'
@@ -436,12 +425,12 @@ class ImageAnalyzer:
                     groups = [g for g in name_match.groups() if g is not None]
                     if groups:
                         element_name = groups[0].strip()
-        
+                
                 # Look for coordinates
                 coords = re.findall(r'\d+', line)
                 if len(coords) >= 2:
                     position = [int(coords[0]), int(coords[1])]
-        
+                
                 if element_name and position:
                     result["ui_elements"].append({
                         "name": element_name,
@@ -449,7 +438,7 @@ class ImageAnalyzer:
                         "state": "enabled",  # Default assumption
                         "function": "Unknown"  # Default
                     })
-
+        
         # If we found no UI elements but have action coordinates, create a default
         action = result["action_analysis"].get("action")
         if (not result["ui_elements"] and action and 
@@ -461,11 +450,11 @@ class ImageAnalyzer:
                 "state": "enabled",
                 "function": "Target for recommended action"
             })
-
+        
         # Log what we found
         ui_count = len(result["ui_elements"])
         logger.info(f"Extracted {ui_count} UI elements from text response")
         if result["action_analysis"]["simple"]:
             logger.info("Detected a simple action recommendation from text")
-    
+            
         return result

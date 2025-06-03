@@ -286,13 +286,13 @@ def truncate_base64(base64_str, max_length=50):
     return f"{first_part}...{last_part} (length: {total_length})"
 
 
-def encode_image_to_base64(image, max_width=1024, optimize=False, force_optimize=False):
+def encode_image_to_base64(image, max_width=None, optimize=False, force_optimize=False):
     """
-    Encode an image to base64 string with resizing but no other optimization.
+    Encode an image to base64 string without resizing.
     
     Args:
         image: PIL Image or path to image
-        max_width: Maximum width to resize to (default: 1024 for API compatibility)
+        max_width: No longer used (kept for backward compatibility)
         optimize: No longer used (kept for backward compatibility)
         force_optimize: No longer used (kept for backward compatibility)
         
@@ -321,18 +321,14 @@ def encode_image_to_base64(image, max_width=1024, optimize=False, force_optimize
         
         # Make a copy to avoid modifying the original
         img = image.copy()
-        original_size = img.size
         
-        # MODIFIED: Only resize the image for API compatibility, but no other optimization
-        # We still need to resize because the API has size limits
-        if max_width and img.width > max_width:
-            # Calculate new height maintaining aspect ratio
-            aspect_ratio = img.height / img.width
-            new_height = int(max_width * aspect_ratio)
-            img = img.resize((max_width, new_height), Image.LANCZOS)
-            logger.info(f"Resized image from {original_size[0]}x{original_size[1]} to {img.width}x{img.height} for API compatibility")
-        else:
-            logger.info(f"Using original image size: {img.width}x{img.height}")
+        # MODIFIED: Use original image size without resizing
+        logger.info(f"Using original image size: {img.width}x{img.height}")
+        
+        # Store the original size in the image info for reference
+        if not hasattr(img, 'info'):
+            img.info = {}
+        img.info['original_size'] = (img.width, img.height)
         
         # Encode to base64
         buffered = io.BytesIO()
@@ -352,73 +348,5 @@ def encode_image_to_base64(image, max_width=1024, optimize=False, force_optimize
         raise Exception(error_msg) from e
 
 
-def scale_coordinates(coords, original_size, resized_size):
-    """
-    Scale coordinates from a resized image back to the original image size.
-    
-    Args:
-        coords: Tuple of (x, y, width, height) coordinates in the resized image
-        original_size: Tuple of (width, height) of the original image
-        resized_size: Tuple of (width, height) of the resized image
-        
-    Returns:
-        Tuple of (x, y, width, height) coordinates scaled to the original image
-        
-    Raises:
-        ValueError: If coordinates are invalid
-        Exception: For any other errors during scaling
-    """
-    if coords is None:
-        error_msg = "Cannot scale None coordinates"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
-    
-    try:
-        # Extract coordinates
-        x, y, width, height = coords
-        
-        # Make sure coordinates are integers
-        if not all(isinstance(coord, int) for coord in [x, y, width, height]):
-            logger.warning(f"Non-integer coordinates detected: {coords}")
-            # Convert to integers
-            x, y, width, height = int(x), int(y), int(width), int(height)
-        
-        # Ensure width and height are positive
-        if width <= 0 or height <= 0:
-            error_msg = f"Invalid dimensions detected: width={width}, height={height}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        
-        # MODIFIED: Apply a fixed 2x scaling factor for Retina displays
-        fixed_scale = 2.0
-        
-        # Scale coordinates
-        scaled_x = int(x * fixed_scale)
-        scaled_y = int(y * fixed_scale)
-        scaled_width = int(width * fixed_scale)
-        scaled_height = int(height * fixed_scale)
-        
-        # Ensure scaled coordinates are valid
-        scaled_x = max(0, scaled_x)  # Ensure x is not negative
-        scaled_y = max(0, scaled_y)  # Ensure y is not negative
-        
-        # Get original_width and original_height if available
-        if original_size:
-            original_width, original_height = original_size
-            
-            # Ensure width and height are reasonable
-            scaled_width = min(scaled_width, original_width - scaled_x)  # Ensure width doesn't exceed image
-            scaled_height = min(scaled_height, original_height - scaled_y)  # Ensure height doesn't exceed image
-        
-        logger.info(f"Scaling coordinates: ({x}, {y}, {width}, {height}) → "
-                  f"({scaled_x}, {scaled_y}, {scaled_width}, {scaled_height}), "
-                  f"using fixed scale factor: {fixed_scale:.2f}")
-        
-        return (scaled_x, scaled_y, scaled_width, scaled_height)
-    except ValueError as e:
-        # Let ValueError propagate up
-        raise
-    except Exception as e:
-        error_msg = f"Error scaling coordinates: {str(e)}"
-        logger.error(error_msg)
-        raise Exception(error_msg) from e
+# scale_coordinates function has been removed as it's no longer used
+# The project now uses full screen capture without window detection
