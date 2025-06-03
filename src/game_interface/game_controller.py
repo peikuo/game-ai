@@ -7,8 +7,7 @@ Handles execution of game actions through input simulation.
 import logging
 import time
 import platform
-import subprocess
-import json
+
 from typing import Any, Dict, Tuple
 
 try:
@@ -45,7 +44,7 @@ class GameController:
             logger.warning("PyAutoGUI not available. Game control will be simulated.")
         else:
             # Configure PyAutoGUI for safety
-            pyautogui.PAUSE = 0.1  # Add small pause between PyAutoGUI commands
+            pyautogui.PAUSE = 0.3  # Add small pause between PyAutoGUI commands
             pyautogui.FAILSAFE = True  # Move mouse to corner to abort
             screen_width, screen_height = pyautogui.size()
             logger.info(f"PyAutoGUI detected screen size: {screen_width}x{screen_height}")
@@ -126,8 +125,16 @@ class GameController:
         
         if PYAUTOGUI_AVAILABLE:
             try:
-                # Move to position first (more reliable)
+                # Get screen dimensions
+                screen_width, screen_height = pyautogui.size()
+                
+                # Move to a safe position first (center of screen)
+                safe_x, safe_y = screen_width // 2, screen_height // 2
+                pyautogui.moveTo(safe_x, safe_y, duration=1)
+                
+                # Then move to target position
                 pyautogui.moveTo(x, y, duration=1)
+                
                 # Then click
                 pyautogui.click(x=x, y=y, button=button)
                 logger.info(f"PyAutoGUI clicked at ({x}, {y}) with {button} button")
@@ -313,9 +320,13 @@ class GameController:
         if not hasattr(self, 'scale_factor') or self.scale_factor == 1.0:
             return x, y
             
-        # Apply the scaling factor to the coordinates
-        scaled_x = int(x * self.scale_factor)
-        scaled_y = int(y * self.scale_factor)
+        # For Retina displays, we need to DIVIDE by the scale factor
+        # This is because the game is providing coordinates in the logical resolution
+        # but PyAutoGUI needs coordinates in the physical resolution
+        scaled_x = int(x / self.scale_factor)
+        scaled_y = int(y / self.scale_factor)
+        
+        logger.info(f"Mac scaling: Original ({x}, {y}) -> Scaled ({scaled_x}, {scaled_y}) with factor {self.scale_factor}")
         
         return scaled_x, scaled_y
     
