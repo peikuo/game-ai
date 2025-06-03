@@ -1,15 +1,16 @@
 #!/usr/bin/env python
 """
-Game analyzer module for analyzing game state and processing monologues.
+Game analyzer module for processing game state and generating responses.
+Handles monologue generation and TTS integration.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from src.utils.log_utils import log_monologue
 from src.tts.tts_manager import TTSManager
+from src.utils.log_utils import log_monologue
+from src.game_player.game_state import GameStateObject, dict_to_game_state_object
 
-# Set up logger
 logger = logging.getLogger(__name__)
 
 
@@ -35,37 +36,7 @@ class GameAnalyzer:
         else:
             logger.info("TTS disabled in config")
 
-    def _convert_to_object(self, data: Dict[str, Any]) -> Any:
-        """
-        Convert a dictionary to an object with attributes for easier access.
-        Recursively converts nested dictionaries and lists.
-        
-        Args:
-            data: Dictionary to convert
-            
-        Returns:
-            Object with attributes corresponding to dictionary keys
-        """
-        if isinstance(data, dict):
-            # Create a new object
-            class GameStateObject:
-                def __repr__(self):
-                    attrs = [f"{k}={repr(v)}" for k, v in self.__dict__.items()]
-                    return f"GameStateObject({', '.join(attrs)})"
-            
-            obj = GameStateObject()
-            
-            # Add each key-value pair as an attribute
-            for key, value in data.items():
-                setattr(obj, key, self._convert_to_object(value))
-            
-            return obj
-        elif isinstance(data, list):
-            # Convert each item in the list
-            return [self._convert_to_object(item) for item in data]
-        else:
-            # Return primitive values as is
-            return data
+    # Removed _convert_to_object method as we now use the dedicated GameStateObject class
     
     def process_game_state(self, game_state: Dict[str, Any], turn_number: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -76,16 +47,16 @@ class GameAnalyzer:
             turn_number: Optional turn number for logging
             
         Returns:
-            Updated game state dictionary
+            Updated game state dictionary with added GameStateObject
         """
         logger.debug(f"Processing game state for turn {turn_number}")
         
-        # Convert game state to object for easier access
-        game_state_obj = self._convert_to_object(game_state)
-        logger.debug(f"Converted game state to object with attributes: {dir(game_state_obj)}")
+        # Convert game state to a proper GameStateObject for easier access
+        game_state_obj = dict_to_game_state_object(game_state)
+        logger.debug(f"Converted game state to GameStateObject with attributes: {dir(game_state_obj)}")
         
         # Process monologue if available
-        if hasattr(game_state_obj, 'monologue') and game_state_obj.monologue:
+        if game_state_obj.monologue:
             self._process_monologue(game_state, turn_number)
         
         # Add the object as a property of the dictionary for easier access

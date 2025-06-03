@@ -14,6 +14,7 @@ from openai import OpenAI
 
 from src.utils.config_loader import get_api_config
 from src.utils.image_utils import truncate_base64
+from src.utils.log_utils import get_session_logger
 
 logger = logging.getLogger(__name__)
 
@@ -253,7 +254,7 @@ class _ModelCall:
 
             # Extract the response content
             response_text = completion.choices[0].message.content
-            logger.debug("Received response from Qwen API: %.100s...", response_text)
+            logger.info("Received response from Qwen API: %s", response_text)
 
             return {"response_text": response_text, "status": "success"}
 

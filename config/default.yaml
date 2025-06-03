@@ -113,32 +113,41 @@ games:
         Based on the screenshot, describe what you see about the game, its current state, and what appears to be happening.
       
       game_state: |
-        Analyze this Vanity Fair: The Pursuit screenshot in detail and provide actionable automation insights. This is a board game where players compete to accumulate wealth and fame through property acquisition and strategic financial decisions.
+        Analyze this Vanity Fair: The Pursuit screenshot and return your analysis in JSON format. This is a board game where players compete to accumulate wealth and fame through property acquisition and strategic financial decisions.
         
-        Your analysis MUST include the following sections:
+        CRITICALLY IMPORTANT: You MUST carefully and accurately identify all buttons, UI elements, and controllable areas that can be interacted with for the next operation. Pay extremely close attention to the precise position and boundaries of these elements, as they will be used for automated mouse clicks and interactions.
         
-        1. UI ELEMENT POSITIONS:
-        - Identify ALL clickable elements (buttons, menus, icons) with their EXACT pixel coordinates (x,y)
-        - For each element, specify: name, position, current state (enabled/disabled/selected), and function
-        - Map key game areas with precise boundaries (board, player area, controls, notifications)
-        - Note any scrollable areas and their scrollbar positions
+        Your analysis must include the following components in a properly formatted JSON object:
         
-        2. GAME STATE ANALYSIS:
-        - Game Phase: Current phase (early, mid, late) and whose turn it is
-        - Player Status: Current player's position, cash, properties, and overall standing
-        - Board State: Visible properties, ownership status, and development level
-        - Resources: Cash on hand, property values, and potential income sources
-        - Other Players: Visible information about opponents' positions and holdings
-        - Cards & Events: Any visible event cards, chance cards, or special situations
+        1. "ui_elements": An array of objects, each representing a clickable UI element with:
+           - "name": Element name/identifier (be specific and descriptive)
+           - "position": [x, y] coordinates as integers (must be EXACT center of the element)
+           - "state": Current state ("enabled", "disabled", "selected")
+           - "function": Brief description of what this element does
         
-        3. AUTOMATION RECOMMENDATIONS:
-        - Provide 3-5 PRECISE automation actions using PyAutoGUI functions
-        - For each action, include the EXACT function call with coordinates
-        - Example format: "pyautogui.click(x=123, y=456)" or "pyautogui.press('space')"
-        - Prioritize actions by strategic importance
-        - Include timing recommendations between actions (e.g., "Wait 2 seconds after clicking")
+        2. "game_areas": Object mapping key areas of the game interface:
+           - "board": [x, y, width, height] boundaries
+           - "player_area": [x, y, width, height] boundaries
+           - "controls": [x, y, width, height] boundaries
+           - Any other important areas with precise coordinates
         
-        Present your analysis in a clear, structured format. Start with the UI element mapping, then game state analysis, and conclude with specific PyAutoGUI automation steps.
+        3. "game_state": Object containing:
+           - "phase": Current game phase ("early", "mid", "late")
+           - "current_turn": Whose turn it is
+           - "player_status": Object with position, cash, properties info
+           - "board_state": Array of visible properties with their status
+           - "resources": Object with available resources and values
+           - "other_players": Array of opponent information objects
+           - "events": Any visible cards or special situations
+        
+        4. "action_analysis": Object containing:
+           - "simple": Boolean (true/false) indicating if this is a simple action. A simple action is one that requires no strategic discussion or decision-making — it's straightforward and usually mechanical. For example, clicking “Next”, entering the game, confirming a prompt, or moving through a tutorial step would all be considered simple actions.
+           - "explanation": Brief explanation for why this is simple or complex
+           - "action": If simple is true, include an object with action type and position (e.g., {"type": "click", "position": [x, y]})
+           
+        5. "monologue": A string containing your thoughts as an image analyzer about what you see in the game. This should be in Chinese (not more than 100 words, simplly express your idea), expressing your observations, analysis, or strategic thoughts about the current game state.Try to sound more like a real person, with emotions or subjective opinions when appropriate.
+        
+        IMPORTANT: Return ONLY a properly formatted JSON object with no additional text or explanation outside the JSON structure. The response should begin with '{' and end with '}' and be valid JSON that can be parsed. Include all analysis inside the JSON structure itself.
       
       animation: |
         Analyze this sequence of Vanity Fair: The Pursuit game frames showing an animation or game event.
@@ -155,21 +164,17 @@ games:
         Then, explain the game mechanics being demonstrated and their significance in Vanity Fair's systems.
         Finally, provide strategic advice on how to respond to this event, including both immediate actions and long-term planning considerations.
 
-# Text-to-speech configuration
-tts:
-  engine: "edge-tts"  # "edge-tts" or "pyttsx3"
-  output_dir: "tts_output"
-  voice_profiles:
-    StrategicAdvisor:
-      voice: "en-US-GuyNeural"  # Voice identifier
-      rate: "+0%"  # Speed adjustment
-      volume: "+0%"  # Volume adjustment
-      pitch: "+0Hz"  # Pitch adjustment
-    
-    GameNarrator:
-      voice: "en-US-JennyNeural"
-      rate: "-10%"
-      volume: "+20%"
-      pitch: "-2Hz"
+# Monologue audio configuration using Kokoro TTS
+audio:
+  # TTS model repository
+  tts_model: "hexgrad/Kokoro-82M-v1.1-zh"
+  # Voice to use (zf_001 = female, zm_010 = male)
+  voice: "zf_001"
+  # Where to store temporary audio files
+  temp_folder: "temp_audio"
+  # Sample rate for audio generation
+  sample_rate: 24000
+  # Enable/disable monologue speech
+  enabled: true
 
 # Other configuration below can be added as needed

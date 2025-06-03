@@ -509,7 +509,7 @@ class HTMLSessionLogger:
             if isinstance(game_state, dict):
                 # Format nicely if it's a dict
                 structured_data = {k: v for k, v in game_state.items() if k != "raw_description"}
-                turn_html.append(json.dumps(structured_data, indent=2))
+                turn_html.append(json.dumps(structured_data, indent=2, ensure_ascii=False))
             else:
                 # Otherwise just write as string
                 turn_html.append(str(game_state))
@@ -523,7 +523,7 @@ class HTMLSessionLogger:
             turn_html.append('<h3>Action Taken</h3>')
             turn_html.append('<div class="action">')
             turn_html.append('<pre class="json"><code>')
-            turn_html.append(json.dumps(action, indent=2))
+            turn_html.append(json.dumps(action, indent=2, ensure_ascii=False))
             turn_html.append('</code></pre>')
             turn_html.append('</div>')
             turn_html.append('</div>')
@@ -676,7 +676,7 @@ class HTMLSessionLogger:
             if isinstance(game_state, dict):
                 # Format nicely if it's a dict
                 structured_data = {k: v for k, v in game_state.items() if k != "raw_description"}
-                game_state_html.append(json.dumps(structured_data, indent=2))
+                game_state_html.append(json.dumps(structured_data, indent=2, ensure_ascii=False))
             else:
                 # Otherwise just write as string
                 game_state_html.append(str(game_state))
@@ -750,6 +750,9 @@ class MarkdownSessionLogger:
     pass
 
 
+# Global session logger instance
+_session_logger = None
+
 def get_session_logger(log_dir="session_logs", game_name="Game AI", format="html"):
     """
     Factory function to get the appropriate session logger based on the specified format.
@@ -762,14 +765,88 @@ def get_session_logger(log_dir="session_logs", game_name="Game AI", format="html
     Returns:
         A session logger instance
     """
-    if format.lower() == "markdown":
-        # Return the markdown logger if implemented
-        logger.info(f"Using Markdown session logger in {log_dir}")
-        # return MarkdownSessionLogger(log_dir=log_dir, game_name=game_name)
-        # For now, default to HTML logger
-        logger.warning("Markdown logger not fully implemented, using HTML logger instead")
-        return HTMLSessionLogger(log_dir=log_dir, game_name=game_name)
-    else:
-        # Default to HTML logger
-        logger.info(f"Using HTML session logger in {log_dir}")
-        return HTMLSessionLogger(log_dir=log_dir, game_name=game_name)
+    global _session_logger
+    
+    if _session_logger is None:
+        if format.lower() == "html":
+            _session_logger = HTMLSessionLogger(log_dir=log_dir, game_name=game_name)
+        elif format.lower() == "markdown":
+            _session_logger = MarkdownSessionLogger(log_dir=log_dir, game_name=game_name)
+        else:
+            logger.warning(f"Unknown session log format: {format}. Using HTML format.")
+            _session_logger = HTMLSessionLogger(log_dir=log_dir, game_name=game_name)
+    
+    return _session_logger
+
+
+def log_screenshot(screenshot, turn=None):
+    """
+    Log a screenshot to the session log if available.
+    
+    Args:
+        screenshot: PIL Image of the game screen
+        turn: Optional turn number to associate with the screenshot
+    """
+    global _session_logger
+    if _session_logger:
+        _session_logger.log_screenshot(screenshot, turn=turn)
+
+
+def log_game_state(game_state, turn=None):
+    """
+    Log game state to the session log if available.
+    
+    Args:
+        game_state (dict): Game state analysis from the vision model
+        turn: Optional turn number to associate with the game state
+    """
+    logger.info("Game State on Turn: " + str(turn), game_state)
+    
+    global _session_logger
+    if _session_logger:
+        _session_logger.log_game_state(game_state, turn=turn)
+
+
+def log_monologue(monologue, raw_response=None, turn=None):
+    """
+    Log a monologue to the session log if available.
+    
+    Args:
+        monologue (str): The monologue text
+        raw_response (dict, optional): Raw LLM response data
+        turn: Optional turn number to associate with the monologue
+    """
+    global _session_logger
+    if _session_logger:
+        # Create a special entry for the monologue in the session log
+        monologue_data = {
+            "monologue": monologue,
+            "raw_description": monologue,  # Use the same format as other LLM responses
+            "type": "narrative"
+        }
+        
+        # Add raw LLM response if available
+        if raw_response:
+            monologue_data["raw_response"] = raw_response
+            
+        # Log to the session log
+        _session_logger.log_game_state(monologue_data, turn=turn)
+        logger.info("Monologue recorded in session log")
+
+
+def log_turn(turn_number, screenshot, game_state, action, agent_thoughts=None, prompt=None):
+    """
+    Log a complete turn to the session log if available.
+    
+    Args:
+        turn_number (int): Current turn number
+        screenshot: PIL Image of the game screen
+        game_state (dict): Game state analysis from the vision model
+        action (dict): Action decided by the agent
+        agent_thoughts (dict, optional): Thoughts from different agents
+        prompt (str, optional): The prompt sent to the LLM
+    """
+    global _session_logger
+    if _session_logger:
+        _session_logger.log_turn(turn_number, screenshot, game_state, action, 
+                              agent_thoughts=agent_thoughts, prompt=prompt)

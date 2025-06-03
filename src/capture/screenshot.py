@@ -31,11 +31,13 @@ class ScreenCapturer:
                 - regions (dict): Dictionary of named regions to capture
                 - save_path (str): Path to save screenshots
                 - save_screenshots (bool): Whether to save screenshots to disk
+                - use_full_screen (bool): Whether to use full screen capture
         """
         self.region = config.get("region", None)
         self.regions = config.get("regions", {})
         self.save_path = Path(config.get("save_path", "screenshots"))
         self.save_screenshots = config.get("save_screenshots", False)
+        self.use_full_screen = config.get("use_full_screen", True)  # Default to full screen
         self.previous_frames = []
         self.frame_diffs = []
         self.min_frames = 5
@@ -44,6 +46,32 @@ class ScreenCapturer:
         if self.save_screenshots:
             self.save_path.mkdir(exist_ok=True, parents=True)
             logger.info("Screenshots will be saved to %s", self.save_path)
+            
+        # Set up full screen capture if needed
+        if self.use_full_screen and self.region is None:
+            self.setup_full_screen()
+            
+    def setup_full_screen(self):
+        """
+        Set up full screen capture by detecting the primary monitor dimensions.
+        This eliminates the need for window detection.
+        
+        Returns:
+            tuple: The region set (x, y, width, height)
+        """
+        logger.info("Setting up full screen capture")
+        try:
+            with mss.mss() as sct:
+                monitor = sct.monitors[1]  # Primary monitor
+                self.region = (monitor['left'], monitor['top'], monitor['width'], monitor['height'])
+                logger.info(f"Full screen region set to: {self.region}")
+                return self.region
+        except Exception as e:
+            logger.error(f"Error setting up full screen capture: {e}")
+            # Fall back to a reasonable default if detection fails
+            self.region = (0, 0, 1280, 720)
+            logger.info(f"Falling back to default region: {self.region}")
+            return self.region
 
     def capture(self):
         """
@@ -58,11 +86,13 @@ class ScreenCapturer:
                     # Capture specific region
                     x, y, width, height = self.region
                     # Log detailed information about the capture region
-                    logger.info(f"Capturing region: x={x}, y={y}, width={width}, height={height}")
+                    logger.info(f"Capturing region: x={x}, y={y}, width={width}, "
+                               f"height={height}")
                     
                     # Ensure coordinates are valid
                     if x < 0 or y < 0:
-                        logger.warning(f"Negative coordinates detected: ({x}, {y}). Adjusting to (0, 0)")
+                        logger.warning(f"Negative coordinates detected: ({x}, {y}). "
+                                      f"Adjusting to (0, 0)")
                         x = max(0, x)
                         y = max(0, y)
                     

@@ -1,20 +1,14 @@
 """
 Module for detecting the location and identity of a game window on the screen using a vision model.
 """
-
-import json
 import logging
-import os
-import re
 from typing import Optional, Tuple, Dict
-import io
 from PIL import Image
-
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from src.utils.image_utils import process_screenshot, encode_image_to_base64, scale_coordinates
 from src.utils import model_call
-from src.utils.config_loader import get_api_config, load_api_config, load_config, PROJECT_ROOT
+from src.utils.config_loader import load_api_config, load_config, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
