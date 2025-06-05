@@ -7,9 +7,9 @@ Currently supports Qwen and Ollama models.
 """
 
 import logging
-import requests
-from typing import Dict, List, Optional, Union, Any
+from typing import Any, Dict, List, Optional, Union
 
+import requests
 from openai import OpenAI
 
 from src.utils.config_loader import get_api_config
@@ -30,7 +30,8 @@ class _ModelCall:
     Not meant to be instantiated directly outside of this module.
     """
 
-    def __init__(self, model_type: str = "qwen", config: Optional[Dict] = None):
+    def __init__(self, model_type: str = "qwen",
+                 config: Optional[Dict] = None):
         """
         Initialize the _ModelCall with the specified model type and configuration.
 
@@ -55,46 +56,51 @@ class _ModelCall:
 
         if self.model_type == "ollama":
             ollama_config = api_config.get("ollama", {})
-            
+
             # Get API URL from config or centralized API config
-            self.api_url = (self.config.get("ollama_api") or 
-                           ollama_config.get("api_url", 
-                                            "http://localhost:11434/api/generate"))
-            self.model_name = (self.config.get("ollama_model") or 
-                              ollama_config.get("model", "llava:latest"))
+            self.api_url = self.config.get("ollama_api") or ollama_config.get(
+                "api_url", "http://localhost:11434/api/generate"
+            )
+            self.model_name = self.config.get(
+                "ollama_model") or ollama_config.get("model", "llava:latest")
             logger.info("Using Ollama model: %s", self.model_name)
 
         elif self.model_type == "qwen":
             qwen_config = api_config.get("qwen", {})
-            
+
             # Get API key from config or centralized API config
-            self.api_key = self.config.get("qwen_api_key") or qwen_config.get("api_key")
-            
+            self.api_key = self.config.get(
+                "qwen_api_key") or qwen_config.get("api_key")
+
             # Get model name and base URL
-            self.model_name = (self.config.get("qwen_model") or 
-                              qwen_config.get("model", "qwen-vl-max-latest"))
-            self.base_url = (self.config.get("qwen_base_url") or 
-                            qwen_config.get("base_url", 
-                                          "https://dashscope.aliyuncs.com/compatible-mode/v1"))
-            
+            self.model_name = self.config.get("qwen_model") or qwen_config.get(
+                "model", "qwen-vl-max-latest"
+            )
+            self.base_url = self.config.get("qwen_base_url") or qwen_config.get(
+                "base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            )
+
             if not self.api_key:
-                logger.warning("Qwen API key not found. Set in config or .env file.")
+                logger.warning(
+                    "Qwen API key not found. Set in config or .env file.")
             else:
                 # Initialize OpenAI client for Qwen
-                self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
-                logger.info("Using Qwen model: %s via OpenAI-compatible API", 
-                           self.model_name)
+                self.client = OpenAI(
+                    api_key=self.api_key,
+                    base_url=self.base_url)
+                logger.info(
+                    "Using Qwen model: %s via OpenAI-compatible API",
+                    self.model_name)
 
         else:
-            logger.warning(f"Unknown model type: {self.model_type}, falling back to Qwen")
+            logger.warning(
+                f"Unknown model type: {self.model_type}, falling back to Qwen"
+            )
             self.model_type = "qwen"
             self._setup_model()  # Recursive call to set up with the default model
 
-    def call_vision_model(
-        self, 
-        base64_image: str, 
-        prompt: str
-    ) -> Dict[str, Any]:
+    def call_vision_model(self, base64_image: str,
+                          prompt: str) -> Dict[str, Any]:
         """
         Call a vision model with a base64-encoded image and prompt.
 
@@ -115,10 +121,7 @@ class _ModelCall:
             return {"error": error_msg}
 
     def call_video_model(
-        self,
-        base64_frames: List[str],
-        prompt: str
-    ) -> Dict[str, Any]:
+            self, base64_frames: List[str], prompt: str) -> Dict[str, Any]:
         """
         Call a model with a sequence of base64-encoded frames (video) and prompt.
 
@@ -137,7 +140,9 @@ class _ModelCall:
         if self.model_type == "qwen":
             return self._call_qwen_video(base64_frames, prompt)
         else:
-            error_msg = f"Video analysis not supported for model type: {self.model_type}"
+            error_msg = (
+                f"Video analysis not supported for model type: {self.model_type}"
+            )
             logger.error(error_msg)
             return {"error": error_msg}
 
@@ -160,11 +165,8 @@ class _ModelCall:
             logger.error(error_msg)
             return {"error": error_msg}
 
-    def _call_ollama_vision(
-        self, 
-        base64_image: str, 
-        prompt: str
-    ) -> Dict[str, Any]:
+    def _call_ollama_vision(self, base64_image: str,
+                            prompt: str) -> Dict[str, Any]:
         """
         Call Ollama vision model with a base64-encoded image and prompt.
 
@@ -192,11 +194,14 @@ class _ModelCall:
             if response.status_code == 200:
                 result = response.json()
                 response_text = result.get("response", "")
-                logger.debug("Received response from Ollama API: %.100s...", 
-                            response_text)
+                logger.debug(
+                    "Received response from Ollama API: %.100s...",
+                    response_text)
                 return {"response_text": response_text, "status": "success"}
             else:
-                error_msg = f"Ollama API error: {response.status_code} - {response.text}"
+                error_msg = (
+                    f"Ollama API error: {response.status_code} - {response.text}"
+                )
                 logger.error(error_msg)
                 return {"error": error_msg, "status": "error"}
         except Exception as e:
@@ -204,11 +209,8 @@ class _ModelCall:
             logger.error(error_msg)
             return {"error": error_msg, "status": "error"}
 
-    def _call_qwen_vision(
-        self, 
-        base64_image: str, 
-        prompt: str
-    ) -> Dict[str, Any]:
+    def _call_qwen_vision(self, base64_image: str,
+                          prompt: str) -> Dict[str, Any]:
         """
         Call Qwen vision model with a base64-encoded image and prompt.
 
@@ -230,7 +232,9 @@ class _ModelCall:
 
         try:
             # Create the completion request using the OpenAI-compatible API
-            logger.debug("Sending request to Qwen API using model %s", self.model_name)
+            logger.debug(
+                "Sending request to Qwen API using model %s",
+                self.model_name)
             completion = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
@@ -241,15 +245,12 @@ class _ModelCall:
                                 "type": "image_url",
                                 "image_url": {
                                     "url": f"data:image/png;base64,{base64_image}"
-                                }
+                                },
                             },
-                            {
-                                "type": "text",
-                                "text": prompt
-                            }
-                        ]
+                            {"type": "text", "text": prompt},
+                        ],
                     }
-                ]
+                ],
             )
 
             # Extract the response content
@@ -264,10 +265,7 @@ class _ModelCall:
             return {"error": error_msg, "status": "error"}
 
     def _call_qwen_video(
-        self,
-        base64_frames: List[str],
-        prompt: str
-    ) -> Dict[str, Any]:
+            self, base64_frames: List[str], prompt: str) -> Dict[str, Any]:
         """
         Call Qwen model with a sequence of base64-encoded frames (video) and prompt.
 
@@ -290,12 +288,13 @@ class _ModelCall:
                 logger.debug("Frame %d base64: %s", i, truncate_base64(frame))
 
             # Prepare the video frames for the API request
-            video_frames = [f"data:image/jpeg;base64,{img}" for img in base64_frames]
+            video_frames = [
+                f"data:image/jpeg;base64,{img}" for img in base64_frames]
 
             # Create the completion request
             logger.debug(
                 "Sending frame sequence analysis request to Qwen API using model: %s",
-                self.model_name
+                self.model_name,
             )
 
             completion = self.client.chat.completions.create(
@@ -313,12 +312,14 @@ class _ModelCall:
 
             # Extract the response content
             response_text = completion.choices[0].message.content
-            logger.debug("Received response from Qwen API: %.100s...", response_text)
+            logger.debug(
+                "Received response from Qwen API: %.100s...",
+                response_text)
 
             return {
                 "response_text": response_text,
                 "frame_count": len(base64_frames),
-                "status": "success"
+                "status": "success",
             }
 
         except Exception as e:
@@ -349,11 +350,14 @@ class _ModelCall:
             if response.status_code == 200:
                 result = response.json()
                 response_text = result.get("response", "")
-                logger.debug("Received response from Ollama API: %.100s...", 
-                            response_text)
+                logger.debug(
+                    "Received response from Ollama API: %.100s...",
+                    response_text)
                 return {"response_text": response_text, "status": "success"}
             else:
-                error_msg = f"Ollama API error: {response.status_code} - {response.text}"
+                error_msg = (
+                    f"Ollama API error: {response.status_code} - {response.text}"
+                )
                 logger.error(error_msg)
                 return {"error": error_msg, "status": "error"}
         except Exception as e:
@@ -379,21 +383,18 @@ class _ModelCall:
 
         try:
             # Create the completion request using the OpenAI-compatible API
-            logger.debug("Sending text request to Qwen API using model %s", 
-                        self.model_name)
+            logger.debug(
+                "Sending text request to Qwen API using model %s",
+                self.model_name)
             completion = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
+                model=self.model_name, messages=[{"role": "user", "content": prompt}]
             )
 
             # Extract the response content
             response_text = completion.choices[0].message.content
-            logger.debug("Received response from Qwen API: %.100s...", response_text)
+            logger.debug(
+                "Received response from Qwen API: %.100s...",
+                response_text)
 
             return {"response_text": response_text, "status": "success"}
 
@@ -404,11 +405,12 @@ class _ModelCall:
 
 
 # Module initialization function
-def initialize(model_type: str = "qwen", config: Optional[Dict] = None) -> None:
+def initialize(model_type: str = "qwen",
+               config: Optional[Dict] = None) -> None:
     """
     Initialize the model call module with the specified model type and configuration.
     This should be called once at the start of the application.
-    
+
     Args:
         model_type (str): Type of model to use ('qwen', 'ollama')
         config (dict, optional): Configuration for the model
@@ -417,13 +419,14 @@ def initialize(model_type: str = "qwen", config: Optional[Dict] = None) -> None:
     _model_type = model_type.lower()
     _config = config or {}
     _model_instance = None  # Reset instance to force recreation with new settings
-    logger.info(f"Model call module initialized with model type: {_model_type}")
+    logger.info(
+        f"Model call module initialized with model type: {_model_type}")
 
 
 def _get_model_instance():
     """
     Get or create the singleton model instance.
-    
+
     Returns:
         _ModelCall: The singleton model instance
     """
@@ -445,12 +448,14 @@ def call_vision_model(base64_image: str, prompt: str) -> Dict[str, Any]:
         dict: Response from the model with status and response_text or error
     """
     # Log the prompt being used for debugging
-    logger.info(f"===== VISION MODEL PROMPT START =====\n{prompt}\n===== VISION MODEL PROMPT END =====")
-    
+    logger.info(
+        f"===== VISION MODEL PROMPT START =====\n{prompt}\n===== VISION MODEL PROMPT END ====="
+    )
+
     # Log image size for debugging
     image_size_kb = len(base64_image) / 1024 if base64_image else 0
     logger.info(f"Image size: {image_size_kb:.2f} KB")
-    
+
     model = _get_model_instance()
     return model.call_vision_model(base64_image, prompt)
 

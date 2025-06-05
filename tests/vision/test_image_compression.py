@@ -5,8 +5,9 @@ This script creates test images with different characteristics and tests the com
 to verify the logging output.
 """
 
-import os
 import logging
+import os
+
 import numpy as np
 from PIL import Image
 
@@ -14,8 +15,11 @@ from src.utils.image_utils import encode_image_to_base64
 from src.utils.log_utils import setup_logging
 
 # Set up logging
-setup_logging(log_level=logging.INFO, log_file="test_image_compression.log", cleanup=True)
+setup_logging(
+    log_level=logging.INFO, log_file="test_image_compression.log", cleanup=True
+)
 logger = logging.getLogger("test_image_compression")
+
 
 def create_test_image(width, height, mode="RGB", has_transparency=False):
     """Create a test image with specified dimensions and characteristics."""
@@ -49,34 +53,36 @@ def create_test_image(width, height, mode="RGB", has_transparency=False):
                 r = g = b = (x + y) % 256
                 array[y, x] = [r, g, b]
         img = Image.fromarray(array)
-    
+
     return img
+
 
 def test_compression_logging():
     """Test image compression with different image types and verify logging."""
     logger.info("Starting image compression logging test")
-    
+
     # Test case 1: Small RGB image
     logger.info("\n\nTest Case 1: Small RGB image")
     img1 = create_test_image(200, 150, "RGB")
     encode_image_to_base64(img1)
-    
+
     # Test case 2: Medium RGB image
     logger.info("\n\nTest Case 2: Medium RGB image")
     img2 = create_test_image(800, 600, "RGB")
     encode_image_to_base64(img2)
-    
+
     # Test case 3: Image with transparency
     logger.info("\n\nTest Case 3: Image with transparency")
     img3 = create_test_image(400, 300, "RGBA", has_transparency=True)
     encode_image_to_base64(img3)
-    
+
     # Test case 4: Large image
     logger.info("\n\nTest Case 4: Large image")
     img4 = create_test_image(1920, 1080, "RGB")
     encode_image_to_base64(img4)
-    
+
     logger.info("Image compression logging test completed")
+
 
 if __name__ == "__main__":
     test_compression_logging()

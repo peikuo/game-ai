@@ -12,6 +12,7 @@ from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
+
 from src.utils.image_utils import optimize_image, truncate_base64
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ class HTMLSessionLogger:
 
         # Initialize the log file with HTML template
         self._initialize_html_file()
-        
+
         logger.info(f"HTML Session log initialized at {self.log_file}")
 
     def _initialize_html_file(self):
@@ -211,7 +212,7 @@ class HTMLSessionLogger:
     <div id="session-content">
     <!-- Session content will be appended here -->
     </div>
-    
+
     <script>
     // JavaScript for collapsible sections
     document.addEventListener('DOMContentLoaded', function() {{
@@ -227,7 +228,7 @@ class HTMLSessionLogger:
                 }}
             }});
         }}
-        
+
         // Function for tab navigation
         function openTab(evt, tabName) {{
             var i, tabcontent, tablinks;
@@ -242,10 +243,10 @@ class HTMLSessionLogger:
             document.getElementById(tabName).style.display = "block";
             evt.currentTarget.className += " active";
         }}
-        
+
         // Expose the function globally
         window.openTab = openTab;
-        
+
         // Activate the first tab by default for each tab group
         var tabGroups = document.getElementsByClassName("tab");
         for (var i = 0; i < tabGroups.length; i++) {{
@@ -265,7 +266,7 @@ class HTMLSessionLogger:
     def _append_to_html(self, html_content):
         """
         Append HTML content to the log file.
-        
+
         Args:
             html_content (str): HTML content to append
         """
@@ -273,24 +274,30 @@ class HTMLSessionLogger:
             # Read the current file
             with open(self.log_file, "r", encoding="utf-8") as f:
                 content = f.read()
-                
+
             # Replace the placeholder with the new content and the placeholder again
             # This effectively inserts the new content before the closing tags
-            content = content.replace("</div>\n    \n    <script>", 
-                                     f"{html_content}</div>\n    \n    <script>")
-                
+            content = content.replace(
+                "</div>\n    \n    <script>",
+                f"{html_content}</div>\n    \n    <script>")
+
             # Write the updated content back
             with open(self.log_file, "w", encoding="utf-8") as f:
                 f.write(content)
-                
+
             return True
         except Exception as e:
             logger.error(f"Error appending to HTML log: {e}")
             return False
 
     def log_turn(
-        self, turn_number, screenshot, game_state, action, agent_thoughts=None, prompt=None
-    ):
+            self,
+            turn_number,
+            screenshot,
+            game_state,
+            action,
+            agent_thoughts=None,
+            prompt=None):
         """
         Log a turn to the session log file.
 
@@ -304,72 +311,85 @@ class HTMLSessionLogger:
         """
         try:
             self.turn_count = turn_number
-            
+
             # Start building HTML content
             turn_html = []
             turn_html.append(f'<div class="turn-container">')
-            turn_html.append(f'<h2>Turn {turn_number} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</h2>')
-            
+            turn_html.append(
+                f'<h2>Turn {turn_number} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</h2>')
+
             # Create tab navigation
             turn_html.append('<div class="tab">')
-            turn_html.append(f'<button class="tablinks" onclick="openTab(event, \'screenshot-{turn_number}\')">Screenshot</button>')
-            turn_html.append(f'<button class="tablinks" onclick="openTab(event, \'analysis-{turn_number}\')">Analysis</button>')
-            turn_html.append(f'<button class="tablinks" onclick="openTab(event, \'action-{turn_number}\')">Action</button>')
-            
+            turn_html.append(
+                f'<button class="tablinks" onclick="openTab(event, \'screenshot-{turn_number}\')">Screenshot</button>')
+            turn_html.append(
+                f'<button class="tablinks" onclick="openTab(event, \'analysis-{turn_number}\')">Analysis</button>')
+            turn_html.append(
+                f'<button class="tablinks" onclick="openTab(event, \'action-{turn_number}\')">Action</button>')
+
             # Add optional tab buttons
             if prompt:
-                turn_html.append(f'<button class="tablinks" onclick="openTab(event, \'prompt-{turn_number}\')">Prompt</button>')
+                turn_html.append(
+                    f'<button class="tablinks" onclick="openTab(event, \'prompt-{turn_number}\')">Prompt</button>')
             if agent_thoughts:
-                turn_html.append(f'<button class="tablinks" onclick="openTab(event, \'thoughts-{turn_number}\')">Agent Thoughts</button>')
-            
+                turn_html.append(
+                    f'<button class="tablinks" onclick="openTab(event, \'thoughts-{turn_number}\')">Agent Thoughts</button>')
+
             turn_html.append('</div>')
-            
+
             # Screenshot tab content
-            turn_html.append(f'<div id="screenshot-{turn_number}" class="tabcontent">')
+            turn_html.append(
+                f'<div id="screenshot-{turn_number}" class="tabcontent">')
             turn_html.append('<h3>Screenshot</h3>')
-            
+
             # Save and embed screenshot
             img_path = self._save_screenshot(screenshot, turn_number)
-            
+
             # Encode image to base64 for embedding
             buffered = BytesIO()
             screenshot.save(buffered, format="PNG")
             img_str = base64.b64encode(buffered.getvalue()).decode()
-            
-            turn_html.append(f'<img src="data:image/png;base64,{img_str}" alt="Turn {turn_number} Screenshot" class="screenshot">')
+
+            turn_html.append(
+                f'<img src="data:image/png;base64,{img_str}" alt="Turn {turn_number} Screenshot" class="screenshot">')
             turn_html.append(f'<p><small>Saved to: {img_path}</small></p>')
             turn_html.append('</div>')
-            
+
             # Analysis tab content
-            turn_html.append(f'<div id="analysis-{turn_number}" class="tabcontent">')
+            turn_html.append(
+                f'<div id="analysis-{turn_number}" class="tabcontent">')
             turn_html.append('<h3>Game State Analysis</h3>')
-            
+
             # Add raw description if available
-            if isinstance(game_state, dict) and "raw_description" in game_state:
+            if isinstance(
+                    game_state,
+                    dict) and "raw_description" in game_state:
                 turn_html.append('<div class="llm-response">')
                 turn_html.append('<h4>LLM Response</h4>')
                 turn_html.append(f'<p>{game_state["raw_description"].replace("\n", "<br>")}</p>')
                 turn_html.append('</div>')
-            
+
             # Add structured analysis
             turn_html.append('<div>')
             turn_html.append('<h4>Structured Analysis</h4>')
             turn_html.append('<pre class="json"><code>')
-            
+
             if isinstance(game_state, dict):
                 # Format nicely if it's a dict
-                structured_data = {k: v for k, v in game_state.items() if k != "raw_description"}
+                structured_data = {
+                    k: v for k, v in game_state.items() if k != "raw_description"}
                 turn_html.append(json.dumps(structured_data, indent=2))
             else:
                 # Otherwise just write as string
                 turn_html.append(str(game_state))
-            
+
             turn_html.append('</code></pre>')
             turn_html.append('</div>')
             turn_html.append('</div>')
-            
+
             # Action tab content
-            turn_html.append(f'<div id="action-{turn_number}" class="tabcontent">')
+            turn_html.append(
+                f'<div id="action-{turn_number}" class="tabcontent">')
             turn_html.append('<h3>Action Taken</h3>')
             turn_html.append('<div class="action">')
             turn_html.append('<pre class="json"><code>')
@@ -377,35 +397,37 @@ class HTMLSessionLogger:
             turn_html.append('</code></pre>')
             turn_html.append('</div>')
             turn_html.append('</div>')
-            
+
             # Add prompt tab if available
             if prompt:
-                turn_html.append(f'<div id="prompt-{turn_number}" class="tabcontent">')
+                turn_html.append(
+                    f'<div id="prompt-{turn_number}" class="tabcontent">')
                 turn_html.append('<h3>Prompt Sent to LLM</h3>')
                 turn_html.append('<pre><code>')
                 turn_html.append(prompt)
                 turn_html.append('</code></pre>')
                 turn_html.append('</div>')
-            
+
             # Add agent thoughts tab if available
             if agent_thoughts:
-                turn_html.append(f'<div id="thoughts-{turn_number}" class="tabcontent">')
+                turn_html.append(
+                    f'<div id="thoughts-{turn_number}" class="tabcontent">')
                 turn_html.append('<h3>Agent Thoughts</h3>')
-                
+
                 for agent_name, thought in agent_thoughts.items():
                     turn_html.append('<div class="agent-thought">')
                     turn_html.append(f'<h4>{agent_name}</h4>')
                     turn_html.append(f'<p>{thought.replace("\n", "<br>")}</p>')
                     turn_html.append('</div>')
-                
+
                 turn_html.append('</div>')
-            
+
             # Close the turn container
             turn_html.append('</div>')
-            
+
             # Join all HTML parts and append to the file
             self._append_to_html('\n'.join(turn_html))
-            
+
             logger.debug(f"Logged turn {turn_number} to HTML session log")
             return True
 
@@ -432,17 +454,21 @@ class HTMLSessionLogger:
         # Optimize the screenshot using the centralized utility
         # Target width of 800px is a good balance for log files
         optimized_screenshot, stats = optimize_image(
-            screenshot, max_width=800, optimize_colors=True, quality=85, force=False
-        )
-        
+            screenshot, max_width=800, optimize_colors=True, quality=85, force=False)
+
         # Log optimization results if significant and not already optimized
-        if not stats.get("already_optimized", False) and stats.get("compression_ratio", 0) > 2.0:
+        if not stats.get(
+                "already_optimized",
+                False) and stats.get(
+                "compression_ratio",
+                0) > 2.0:
             logger.debug(
                 f"Screenshot for turn {turn_number} optimized: "
                 f"{stats.get('compression_ratio', 0):.1f}x smaller"
             )
         elif stats.get("already_optimized", False):
-            logger.debug(f"Screenshot for turn {turn_number} was already optimized")
+            logger.debug(
+                f"Screenshot for turn {turn_number} was already optimized")
 
         # Save the optimized screenshot
         img_path = screenshots_dir / f"turn_{turn_number:03d}.png"
@@ -454,7 +480,7 @@ class HTMLSessionLogger:
     def log_screenshot(self, screenshot, turn=None):
         """
         Log just a screenshot to the session log file without additional data.
-        
+
         Args:
             screenshot: PIL Image of the game screen
             turn: Optional turn number to associate with the screenshot
@@ -462,77 +488,85 @@ class HTMLSessionLogger:
         try:
             self.screenshot_count += 1
             turn_num = turn if turn is not None else f"S{self.screenshot_count}"
-            
+
             # Create screenshot container
             screenshot_html = []
             screenshot_html.append('<div class="turn-container">')
-            screenshot_html.append(f'<h2>Screenshot {turn_num} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</h2>')
-            
+            screenshot_html.append(
+                f'<h2>Screenshot {turn_num} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</h2>')
+
             # Save and embed screenshot
-            img_path = self._save_screenshot(screenshot, turn or self.screenshot_count)
-            
+            img_path = self._save_screenshot(
+                screenshot, turn or self.screenshot_count)
+
             # Encode image to base64 for embedding
             buffered = BytesIO()
             screenshot.save(buffered, format="PNG")
             img_str = base64.b64encode(buffered.getvalue()).decode()
-            
-            screenshot_html.append(f'<img src="data:image/png;base64,{img_str}" alt="Screenshot {turn_num}" class="screenshot">')
-            screenshot_html.append(f'<p><small>Saved to: {img_path}</small></p>')
+
+            screenshot_html.append(
+                f'<img src="data:image/png;base64,{img_str}" alt="Screenshot {turn_num}" class="screenshot">')
+            screenshot_html.append(
+                f'<p><small>Saved to: {img_path}</small></p>')
             screenshot_html.append('</div>')
-            
+
             # Join all HTML parts and append to the file
             self._append_to_html('\n'.join(screenshot_html))
-            
+
             logger.debug(f"Logged screenshot {turn_num} to HTML session log")
             return True
 
         except Exception as e:
             logger.error(f"Error logging screenshot to HTML: {e}")
             return False
-            
+
     def log_game_state(self, game_state, turn=None):
         """
         Log just the game state analysis to the session log file without screenshots or actions.
-        
+
         Args:
             game_state (dict): Game state analysis from the vision model
             turn: Optional turn number to associate with the game state
         """
         try:
             turn_num = turn if turn is not None else self.turn_count + 1
-            
+
             # Create game state container
             game_state_html = []
             game_state_html.append('<div class="turn-container">')
-            game_state_html.append(f'<h2>Game State Analysis {turn_num} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</h2>')
-            
+            game_state_html.append(
+                f'<h2>Game State Analysis {turn_num} - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</h2>')
+
             # Add raw description if available
-            if isinstance(game_state, dict) and "raw_description" in game_state:
+            if isinstance(
+                    game_state,
+                    dict) and "raw_description" in game_state:
                 game_state_html.append('<div class="llm-response">')
                 game_state_html.append('<h3>LLM Response</h3>')
                 game_state_html.append(f'<p>{game_state["raw_description"].replace("\n", "<br>")}</p>')
                 game_state_html.append('</div>')
-            
+
             # Add structured analysis
             game_state_html.append('<div>')
             game_state_html.append('<h3>Structured Analysis</h3>')
             game_state_html.append('<pre class="json"><code>')
-            
+
             if isinstance(game_state, dict):
                 # Format nicely if it's a dict
-                structured_data = {k: v for k, v in game_state.items() if k != "raw_description"}
+                structured_data = {
+                    k: v for k, v in game_state.items() if k != "raw_description"}
                 game_state_html.append(json.dumps(structured_data, indent=2))
             else:
                 # Otherwise just write as string
                 game_state_html.append(str(game_state))
-            
+
             game_state_html.append('</code></pre>')
             game_state_html.append('</div>')
             game_state_html.append('</div>')
-            
+
             # Join all HTML parts and append to the file
             self._append_to_html('\n'.join(game_state_html))
-            
+
             logger.debug(f"Logged game state {turn_num} to HTML session log")
             return True
 
@@ -560,24 +594,28 @@ class HTMLSessionLogger:
             summary_html = []
             summary_html.append('<div class="summary">')
             summary_html.append('<h2>Session Summary</h2>')
-            summary_html.append(f'<p><strong>Total turns played:</strong> {total_turns}</p>')
-            
+            summary_html.append(
+                f'<p><strong>Total turns played:</strong> {total_turns}</p>')
+
             if final_score is not None:
-                summary_html.append(f'<p><strong>Final score:</strong> {final_score}</p>')
-            
+                summary_html.append(
+                    f'<p><strong>Final score:</strong> {final_score}</p>')
+
             if victory_type is not None:
-                summary_html.append(f'<p><strong>Victory type:</strong> {victory_type}</p>')
-            
+                summary_html.append(
+                    f'<p><strong>Victory type:</strong> {victory_type}</p>')
+
             if additional_notes is not None:
                 summary_html.append('<h3>Additional Notes</h3>')
                 summary_html.append(f'<p>{additional_notes.replace("\n", "<br>")}</p>')
-            
-            summary_html.append(f'<p><strong>Session ended:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>')
+
+            summary_html.append(
+                f'<p><strong>Session ended:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>')
             summary_html.append('</div>')
-            
+
             # Join all HTML parts and append to the file
             self._append_to_html('\n'.join(summary_html))
-            
+
             logger.info(f"Session summary logged to HTML file {self.log_file}")
             return True
 

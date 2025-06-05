@@ -12,6 +12,7 @@ from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
+
 from src.utils.image_utils import optimize_image
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,13 @@ class SessionLogger:
         logger.info(f"Session log initialized at {self.log_file}")
 
     def log_turn(
-        self, turn_number, screenshot, game_state, action, agent_thoughts=None, prompt=None
+        self,
+        turn_number,
+        screenshot,
+        game_state,
+        action,
+        agent_thoughts=None,
+        prompt=None,
     ):
         """
         Log a turn to the session log file.
@@ -83,7 +90,9 @@ class SessionLogger:
                 screenshot.save(buffered, format="PNG")
                 img_str = base64.b64encode(buffered.getvalue()).decode()
                 f.write(f"<details>\n<summary>Embedded Screenshot</summary>\n\n")
-                f.write(f'<img src="data:image/png;base64,{img_str}" alt="Turn {turn_number} Screenshot" width="800">\n')
+                f.write(
+                    f'<img src="data:image/png;base64,{img_str}" alt="Turn {turn_number} Screenshot" width="800">\n'
+                )
                 f.write(f"</details>\n\n")
 
                 # Write the prompt sent to the LLM if available
@@ -95,19 +104,21 @@ class SessionLogger:
 
                 # Write game state analysis
                 f.write("### Game State Analysis\n\n")
-                
+
                 # Write raw description if available
-                if isinstance(game_state, dict) and "raw_description" in game_state:
+                if isinstance(game_state,
+                              dict) and "raw_description" in game_state:
                     f.write("#### LLM Response\n\n")
                     f.write(game_state["raw_description"])
                     f.write("\n\n")
-                
+
                 # Write structured analysis if available
                 f.write("#### Structured Analysis\n\n")
                 f.write("```json\n")
                 if isinstance(game_state, dict):
                     # Format nicely if it's a dict
-                    structured_data = {k: v for k, v in game_state.items() if k != "raw_description"}
+                    structured_data = {
+                        k: v for k, v in game_state.items() if k != "raw_description"}
                     f.write(json.dumps(structured_data, indent=2))
                 else:
                     # Otherwise just write as string
@@ -158,17 +169,20 @@ class SessionLogger:
         # Target width of 800px is a good balance for log files
         # We don't force optimization if the image is already optimized
         optimized_screenshot, stats = optimize_image(
-            screenshot, max_width=800, optimize_colors=True, quality=85, force=False
-        )
-        
+            screenshot, max_width=800, optimize_colors=True, quality=85, force=False)
+
         # Log optimization results if significant and not already optimized
-        if not stats.get("already_optimized", False) and stats.get("compression_ratio", 0) > 2.0:
+        if (
+            not stats.get("already_optimized", False)
+            and stats.get("compression_ratio", 0) > 2.0
+        ):
             logger.debug(
                 f"Screenshot for turn {turn_number} optimized: "
                 f"{stats.get('compression_ratio', 0):.1f}x smaller"
             )
         elif stats.get("already_optimized", False):
-            logger.debug(f"Screenshot for turn {turn_number} was already optimized")
+            logger.debug(
+                f"Screenshot for turn {turn_number} was already optimized")
 
         # Save the optimized screenshot
         img_path = screenshots_dir / f"turn_{turn_number:03d}.png"
@@ -180,7 +194,7 @@ class SessionLogger:
     def log_screenshot(self, screenshot, turn=None):
         """
         Log just a screenshot to the session log file without additional data.
-        
+
         Args:
             screenshot: PIL Image of the game screen
             turn: Optional turn number to associate with the screenshot
@@ -189,7 +203,8 @@ class SessionLogger:
             with open(self.log_file, "a", encoding="utf-8") as f:
                 # Write header with timestamp
                 current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                header = "## Screenshot" if turn is None else f"## Screenshot - Turn {turn}"
+                header = (
+                    "## Screenshot" if turn is None else f"## Screenshot - Turn {turn}")
                 f.write(f"{header} - {current_time}\n\n")
 
                 # Save and embed screenshot
@@ -198,18 +213,20 @@ class SessionLogger:
 
                 # Add separator
                 f.write("---\n\n")
-                
-            logger.debug("Logged screenshot%s", ' for turn ' + str(turn) if turn else '')
+
+            logger.debug(
+                "Logged screenshot%s", " for turn " + str(turn) if turn else ""
+            )
             return True
 
         except Exception as e:
             logger.error("Error logging screenshot: %s", e)
             return False
-            
+
     def log_game_state(self, game_state, turn=None):
         """
         Log just the game state analysis to the session log file without screenshots or actions.
-        
+
         Args:
             game_state (dict): Game state analysis from the vision model
             turn: Optional turn number to associate with the game state
@@ -218,24 +235,27 @@ class SessionLogger:
             with open(self.log_file, "a", encoding="utf-8") as f:
                 # Write header with timestamp
                 current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                header = "## Game State" if turn is None else f"## Game State - Turn {turn}"
+                header = (
+                    "## Game State" if turn is None else f"## Game State - Turn {turn}")
                 f.write(f"{header} - {current_time}\n\n")
 
                 # Write game state analysis
                 f.write("### Game State Analysis\n\n")
-                
+
                 # Write raw description if available
-                if isinstance(game_state, dict) and "raw_description" in game_state:
+                if isinstance(game_state,
+                              dict) and "raw_description" in game_state:
                     f.write("#### LLM Response\n\n")
                     f.write(game_state["raw_description"])
                     f.write("\n\n")
-                
+
                 # Write structured analysis if available
                 f.write("#### Structured Analysis\n\n")
                 f.write("```json\n")
                 if isinstance(game_state, dict):
                     # Format nicely if it's a dict
-                    structured_data = {k: v for k, v in game_state.items() if k != "raw_description"}
+                    structured_data = {
+                        k: v for k, v in game_state.items() if k != "raw_description"}
                     f.write(json.dumps(structured_data, indent=2))
                 else:
                     # Otherwise just write as string
@@ -244,12 +264,15 @@ class SessionLogger:
 
                 # Add separator
                 f.write("---\n\n")
-                
-            logger.debug("Logged game state to session log" + (f" for turn {turn}" if turn else ""))
+
+            logger.debug(
+                "Logged game state to session log"
+                + (f" for turn {turn}" if turn else "")
+            )
             return True
         except Exception as e:
-            logger.error("Error logging game state%s: %s", 
-                        f" for turn {turn}" if turn else "", e)
+            logger.error("Error logging game state%s: %s",
+                         f" for turn {turn}" if turn else "", e)
             return False
 
     def log_summary(

@@ -12,14 +12,14 @@ import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
 import cv2
 import numpy as np
 from PIL import Image
 
-from src.utils.image_utils import encode_image_to_base64
 from src.utils import model_call
+from src.utils.image_utils import encode_image_to_base64
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +64,10 @@ class FrameExtractor:
 
         # No need to initialize model_call as we're using the module directly
         # Note: only Qwen supports video analysis
-        
+
         # Model call initialization is now handled in main.py
-        # No need to check for API key here as that's handled by the model_call module
+        # No need to check for API key here as that's handled by the model_call
+        # module
 
     def detect_and_capture_frames(
             self,
@@ -326,28 +327,33 @@ class FrameExtractor:
             base64_frames = []
             for path in frame_paths:
                 img = Image.open(path)
-                base64_img = encode_image_to_base64(img, max_width=640, optimize=True)
+                base64_img = encode_image_to_base64(
+                    img, max_width=640, optimize=True)
                 base64_frames.append(base64_img)
-            
+
             # Use the centralized model call utility for video analysis
             # Use the model_call module directly instead of self.model_call
             result = model_call.call_video_model(base64_frames, prompt)
-            
+
             # Clean up temporary files
             for path in frame_paths:
                 try:
                     os.remove(path)
                 except Exception as e:
-                    logger.warning(f"Failed to remove temporary file {path}: {e}")
+                    logger.warning(
+                        f"Failed to remove temporary file {path}: {e}")
 
             if result.get("status") == "success":
                 return {
                     "analysis": result.get("response_text", ""),
-                    "frame_count": len(frames)
+                    "frame_count": len(frames),
                 }
             else:
                 logger.error(f"Error in model call: {result.get('error')}")
-                return {"error": result.get("error", "Unknown error in model call")}
+                return {
+                    "error": result.get(
+                        "error",
+                        "Unknown error in model call")}
 
         except Exception as e:
             logger.exception(f"Error analyzing frames: {e}")
@@ -370,18 +376,22 @@ class FrameExtractor:
         frames = self.detect_and_capture_frames(region_name)
 
         if not frames or len(frames) < 2:
-            logger.info("No animation detected or insufficient frames captured")
-            return {"status": "no_animation", "message": "No animation detected"}
+            logger.info(
+                "No animation detected or insufficient frames captured")
+            return {
+                "status": "no_animation",
+                "message": "No animation detected"}
 
         # Extract key frames
-        logger.info(f"Extracting key frames from {len(frames)} captured frames")
+        logger.info(
+            f"Extracting key frames from {len(frames)} captured frames")
         key_frames = self.extract_key_frames(frames)
 
         if not key_frames or len(key_frames) < 1:
             logger.info("No key frames extracted")
             return {
                 "status": "no_key_frames",
-                "message": "No key frames could be extracted"
+                "message": "No key frames could be extracted",
             }
 
         # Analyze the key frames
@@ -392,12 +402,12 @@ class FrameExtractor:
             logger.error(f"Error analyzing frames: {analysis_result['error']}")
             return {
                 "status": "error",
-                "message": f"Error analyzing frames: {analysis_result['error']}"
+                "message": f"Error analyzing frames: {analysis_result['error']}",
             }
 
         return {
             "status": "success",
             "analysis": analysis_result.get("analysis", ""),
             "key_frame_count": len(key_frames),
-            "total_frame_count": len(frames)
+            "total_frame_count": len(frames),
         }

@@ -13,7 +13,10 @@ from dotenv import load_dotenv
 logger = logging.getLogger(__name__)
 
 # Find the project root directory (where .env file is located)
-PROJECT_ROOT = Path(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+PROJECT_ROOT = Path(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(__file__))))
 ENV_FILE = PROJECT_ROOT / ".env"
 
 # Configuration cache
@@ -21,6 +24,8 @@ _CONFIG_CACHE = {}
 _ENV_LOADED = False
 
 # Load environment variables from .env file (only once)
+
+
 def _ensure_env_loaded():
     global _ENV_LOADED
     if not _ENV_LOADED:
@@ -45,14 +50,14 @@ def load_config(config_path):
     """
     # Ensure environment variables are loaded
     _ensure_env_loaded()
-    
+
     config_path = Path(config_path)
     cache_key = str(config_path.absolute())
-    
+
     # Return cached config if available
     if cache_key in _CONFIG_CACHE:
         return _CONFIG_CACHE[cache_key]
-    
+
     if not config_path.exists():
         logger.warning("Configuration file not found: %s", config_path)
         _CONFIG_CACHE[cache_key] = {}
@@ -85,7 +90,7 @@ def get_env_var(var_name, default=None):
     """
     # Ensure environment variables are loaded
     _ensure_env_loaded()
-    
+
     value = os.environ.get(var_name, default)
     if value is not None:
         logger.debug("Using environment variable %s", var_name)
@@ -100,32 +105,38 @@ def load_api_config():
     Returns:
         dict: API configuration dictionary
     """
-    cache_key = 'api_config'
-    
+    cache_key = "api_config"
+
     # Return cached config if available
     if cache_key in _CONFIG_CACHE:
         return _CONFIG_CACHE[cache_key]
-        
+
     api_config = {
         "qwen": {
             "api_key": get_env_var("QWEN_API_KEY"),
-            "model": get_env_var("QWEN_MODEL", "qwen-vl-max-latest"),
+            "model": get_env_var(
+                "QWEN_MODEL",
+                "qwen-vl-max-latest"),
             "base_url": get_env_var(
-                "QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
-            ),
+                "QWEN_BASE_URL",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1"),
         },
         "ollama": {
-            "api_url": get_env_var("OLLAMA_API_URL", "http://localhost:11434/api/generate"),
-            "model": get_env_var("OLLAMA_MODEL", "llava:latest"),
-        }
+            "api_url": get_env_var(
+                "OLLAMA_API_URL",
+                "http://localhost:11434/api/generate"),
+            "model": get_env_var(
+                "OLLAMA_MODEL",
+                "llava:latest"),
+        },
     }
-    
+
     # Log API configuration status (without exposing sensitive information)
     if api_config["qwen"]["api_key"]:
         logger.info("Qwen API key loaded from environment variables")
     else:
         logger.warning("Qwen API key not found in environment variables")
-    
+
     # Cache the result
     _CONFIG_CACHE[cache_key] = api_config
     return api_config

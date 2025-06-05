@@ -5,17 +5,18 @@ Handles execution of game actions through input simulation.
 """
 
 import logging
-import time
 import platform
-
+import time
 from typing import Any, Dict, Tuple
 
 try:
     import pyautogui
+
     PYAUTOGUI_AVAILABLE = True
 except ImportError:
     PYAUTOGUI_AVAILABLE = False
-    logging.warning("PyAutoGUI not available. Install with: pip install pyautogui")
+    logging.warning(
+        "PyAutoGUI not available. Install with: pip install pyautogui")
 
 logger = logging.getLogger(__name__)
 
@@ -38,32 +39,39 @@ class GameController:
         # Delay between actions in seconds
         self.action_delay = config.get("action_delay", 0.5)
         self.input_config = config.get("input", {})
-        
+
         # Check if PyAutoGUI is available
         if not PYAUTOGUI_AVAILABLE:
-            logger.warning("PyAutoGUI not available. Game control will be simulated.")
+            logger.warning(
+                "PyAutoGUI not available. Game control will be simulated.")
         else:
             # Configure PyAutoGUI for safety
             pyautogui.PAUSE = 0.3  # Add small pause between PyAutoGUI commands
             pyautogui.FAILSAFE = True  # Move mouse to corner to abort
             screen_width, screen_height = pyautogui.size()
-            logger.info(f"PyAutoGUI detected screen size: {screen_width}x{screen_height}")
-            
+            logger.info(
+                f"PyAutoGUI detected screen size: {screen_width}x{screen_height}"
+            )
+
             # Detect Mac display scaling
             self.scale_factor = 1.0
-            if platform.system() == 'Darwin':
+            if platform.system() == "Darwin":
                 # On Mac, we'll use a fixed scale factor based on common Retina display settings
                 # Default to 2.0 for Retina displays
                 self.scale_factor = self._detect_mac_scale_factor()
-                logger.info(f"Mac display scale factor set to: {self.scale_factor}")
-                
+                logger.info(
+                    f"Mac display scale factor set to: {self.scale_factor}")
+
                 # Get the actual screen resolution for verification
                 actual_width, actual_height = pyautogui.size()
-                logger.info(f"Actual screen resolution: {actual_width}x{actual_height}")
-                
+                logger.info(
+                    f"Actual screen resolution: {actual_width}x{actual_height}")
+
                 # Log the effective resolution after scaling
-                logger.info(f"Effective resolution with scaling: {int(actual_width/self.scale_factor)}x{int(actual_height/self.scale_factor)}")
-        
+                logger.info(
+                    f"Effective resolution with scaling: {int(actual_width/self.scale_factor)}x{int(actual_height/self.scale_factor)}"
+                )
+
         logger.info("GameController initialized for %s", self.game_name)
 
     def execute_action(self, action: Dict[str, Any]) -> bool:
@@ -121,17 +129,18 @@ class GameController:
             try:
                 # Get screen dimensions
                 screen_width, screen_height = pyautogui.size()
-                
+
                 # Move to a safe position first (center of screen)
                 safe_x, safe_y = screen_width // 2, screen_height // 2
                 pyautogui.moveTo(safe_x, safe_y, duration=1)
-                
+
                 # Then move to target position
                 pyautogui.moveTo(x, y, duration=1)
-                
+
                 # Then click
                 pyautogui.click(x=x, y=y, button=button)
-                logger.info(f"PyAutoGUI clicked at ({x}, {y}) with {button} button")
+                logger.info(
+                    f"PyAutoGUI clicked at ({x}, {y}) with {button} button")
             except Exception as e:
                 logger.error(f"PyAutoGUI click failed: {e}")
                 return False
@@ -158,19 +167,22 @@ class GameController:
             return False
 
         logger.debug("Pressing key: %s", key)
-        
+
         if PYAUTOGUI_AVAILABLE:
             try:
                 # Handle special key combinations (ctrl+key, shift+key, etc.)
-                if '+' in key:
-                    parts = key.split('+')
+                if "+" in key:
+                    parts = key.split("+")
                     modifiers = parts[:-1]
                     key_to_press = parts[-1]
-                    
+
                     # Handle hotkeys with modifiers
-                    keys_to_press = [mod.lower().strip() for mod in modifiers] + [key_to_press.lower().strip()]
+                    keys_to_press = [mod.lower().strip() for mod in modifiers] + [
+                        key_to_press.lower().strip()
+                    ]
                     pyautogui.hotkey(*keys_to_press)
-                    logger.info(f"PyAutoGUI pressed hotkey: {'+'.join(keys_to_press)}")
+                    logger.info(
+                        f"PyAutoGUI pressed hotkey: {'+'.join(keys_to_press)}")
                 else:
                     # Handle single key press
                     pyautogui.press(key)
@@ -218,9 +230,9 @@ class GameController:
         if None in (start_x, start_y, end_x, end_y):
             logger.error("Drag action missing required coordinates")
             return False
-            
+
         # Apply Mac scaling if needed
-        if platform.system() == 'Darwin' and hasattr(self, 'scale_factor'):
+        if platform.system() == "Darwin" and hasattr(self, "scale_factor"):
             start_x, start_y = self._apply_mac_scaling(start_x, start_y)
             end_x, end_y = self._apply_mac_scaling(end_x, end_y)
             logger.debug(f"Adjusted drag coordinates for Mac scaling")
@@ -231,19 +243,23 @@ class GameController:
             start_y,
             end_x,
             end_y,
-        )    
+        )
         if PYAUTOGUI_AVAILABLE:
             try:
                 # Move to start position first
                 pyautogui.moveTo(start_x, start_y, duration=0.2)
                 # Then drag to end position
-                pyautogui.dragTo(end_x, end_y, duration=0.5, button='left')
-                logger.info(f"PyAutoGUI dragged from ({start_x}, {start_y}) to ({end_x}, {end_y})")
+                pyautogui.dragTo(end_x, end_y, duration=0.5, button="left")
+                logger.info(
+                    f"PyAutoGUI dragged from ({start_x}, {start_y}) to ({end_x}, {end_y})"
+                )
             except Exception as e:
                 logger.error(f"PyAutoGUI drag failed: {e}")
                 return False
         else:
-            logger.info(f"Simulated drag from ({start_x}, {start_y}) to ({end_x}, {end_y})")
+            logger.info(
+                f"Simulated drag from ({start_x}, {start_y}) to ({end_x}, {end_y})"
+            )
 
         # Simulate action delay
         time.sleep(self.action_delay)
@@ -276,54 +292,58 @@ class GameController:
     def _detect_mac_scale_factor(self) -> float:
         """
         Detect the display scaling factor on macOS using a simple approach.
-        
+
         Returns:
             float: The scaling factor (typically 1.0, 1.5, or 2.0 on Retina displays)
         """
         try:
             # Get the screen resolution using PyAutoGUI
             screen_width, screen_height = pyautogui.size()
-            
+
             # Common MacBook resolutions and their likely scale factors
             # These are typical values for common Mac displays
             if screen_width >= 3000 or screen_height >= 1800:  # Retina 5K/6K displays
                 return 2.0
             elif screen_width >= 2500 or screen_height >= 1600:  # Retina displays
                 return 2.0
-            elif screen_width >= 1400 or screen_height >= 900:  # Standard Retina MacBooks
+            elif (
+                screen_width >= 1400 or screen_height >= 900
+            ):  # Standard Retina MacBooks
                 return 2.0
             else:
                 return 1.0
-                
+
         except Exception as e:
             logger.error(f"Error detecting Mac scale factor: {e}")
             # Default to 2.0 for most modern Macs with Retina displays
             return 2.0
-        
+
     def _apply_mac_scaling(self, x: int, y: int) -> Tuple[int, int]:
         """
         Apply Mac display scaling to coordinates.
-        
+
         Args:
             x: X coordinate
             y: Y coordinate
-            
+
         Returns:
             Tuple[int, int]: Scaled coordinates
         """
-        if not hasattr(self, 'scale_factor') or self.scale_factor == 1.0:
+        if not hasattr(self, "scale_factor") or self.scale_factor == 1.0:
             return x, y
-            
+
         # For Retina displays, we need to DIVIDE by the scale factor
         # This is because the game is providing coordinates in the logical resolution
         # but PyAutoGUI needs coordinates in the physical resolution
         scaled_x = int(x / self.scale_factor)
         scaled_y = int(y / self.scale_factor)
-        
-        logger.info(f"Mac scaling: Original ({x}, {y}) -> Scaled ({scaled_x}, {scaled_y}) with factor {self.scale_factor}")
-        
+
+        logger.info(
+            f"Mac scaling: Original ({x}, {y}) -> Scaled ({scaled_x}, {scaled_y}) with factor {self.scale_factor}"
+        )
+
         return scaled_x, scaled_y
-    
+
     def cleanup(self) -> None:
         """
         Perform cleanup operations when shutting down the controller.

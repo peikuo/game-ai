@@ -4,18 +4,18 @@ Main entry point for the Game AI Agent.
 """
 import argparse
 import logging
-import time
 import os
+import time
 
 # Import project modules
 from src.capture.screenshot import ScreenCapturer
 from src.game_interface.game_controller import GameController
 from src.game_player.game_analyzer import GameAnalyzer
-from src.utils.config_loader import load_config
-from src.utils.log_utils import setup_logging, get_session_logger
-from src.utils import model_call
-from src.vision.image_analyzer import ImageAnalyzer
 from src.tts.tts_manager import TTSManager  # New TTS manager for monologues
+from src.utils import model_call
+from src.utils.config_loader import load_config
+from src.utils.log_utils import get_session_logger, setup_logging
+from src.vision.image_analyzer import ImageAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -78,10 +78,10 @@ def main():
     # Configure logging using our utility module
     log_level = logging.DEBUG if args.debug else logging.INFO
     setup_logging(log_level=log_level, log_file="game_ai.log", cleanup=True)
-    
+
     # Load configuration
     config = load_config(args.config)
-    
+
     # Initialize the model_call module
     model_call.initialize(model_type=args.model, config=config)
 
@@ -89,13 +89,14 @@ def main():
     game_name = args.game or config.get("game", "vanity_fair")
     game_config = config.get("games", {}).get(game_name, {})
 
-    logger.info(f"Starting AI agent for game: {game_name} with {args.model} model")
+    logger.info(
+        f"Starting AI agent for game: {game_name} with {args.model} model")
 
     # Initialize screenshot capturer with full screen mode enabled
     screenshot_config = {
         "save_screenshots": not args.no_logging,
         "save_path": os.path.join(args.log_dir, "screenshots"),
-        "use_full_screen": True  # Enable full screen capture
+        "use_full_screen": True,  # Enable full screen capture
     }
     screenshot_capture = ScreenCapturer(config=screenshot_config)
 
@@ -118,7 +119,7 @@ def main():
     # Initialize TTS Manager if enabled
 
     tts_manager = TTSManager(config.get("audio", {}))
-    logger.info("TTS inited and enabled")        
+    logger.info("TTS inited and enabled")
 
     # Create game controller and analyzer
     game_controller = GameController(config=game_config)
@@ -141,40 +142,39 @@ def main():
 
             # Capture screenshot and analyze game state
             image = screenshot_capture.capture()
-            
+
             # Log screenshot if enabled
             if session_log:
                 session_log.log_screenshot(image, turn=turn_count)
 
             # Analyze game state
             game_state = image_analyzer.analyze(
-                image,
-                analysis_type="game_state",
-                check_animation=True,
-                region_name="game"
+                image, analysis_type="game_state", region_name="game"
             )
 
             # Log game state if enabled
             if session_log:
                 session_log.log_game_state(game_state, turn=turn_count)
-                
+
             # Display monologue if available (TTS handled by GameAnalyzer)
             if "monologue" in game_state and game_state["monologue"]:
                 monologue = game_state["monologue"]
                 # Print with color to make it stand out in the terminal
                 print(f"\nMonologue: {monologue}\n")
-                
+
                 # Log the raw LLM response if available for debugging
                 if "raw_response" in game_state:
-                    logger.debug(f"Raw LLM Response: {game_state['raw_response']}")
-                    
+                    logger.debug(
+                        f"Raw LLM Response: {game_state['raw_response']}")
+
                 # Add monologue to session log if enabled
                 if session_log:
-                    # Create a properly structured game state object for logging
+                    # Create a properly structured game state object for
+                    # logging
                     monologue_data = {
                         "raw_description": monologue,  # Required by the logger
                         "monologue": monologue,
-                        "type": "monologue_only"
+                        "type": "monologue_only",
                     }
                     session_log.log_game_state(monologue_data, turn=turn_count)
 
