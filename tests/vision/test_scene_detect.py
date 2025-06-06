@@ -7,7 +7,6 @@ This script demonstrates the use of the SceneDetector class
 to detect animation and voice in a simulated game scene.
 """
 
-from src.game_interface.scene_detect import SceneDetector
 import logging
 import os
 import sys
@@ -15,6 +14,8 @@ import time
 
 import numpy as np
 from PIL import Image
+
+from src.game_interface.scene_detect import SceneDetector
 
 # Add the project root to the path so we can import our modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

@@ -7,7 +7,6 @@ import logging
 from typing import Any, Dict, Optional, Union
 
 from src.game_player.game_state import GameStateObject, dict_to_game_state_object
-from src.tts.tts_manager import TTSManager
 from src.utils.log_utils import log_monologue
 
 # Set up logger
@@ -50,12 +49,13 @@ class GameAnalyzer:
         if game_state_obj.monologue:
             self._process_monologue(game_state_obj, turn_number)
 
-        # Check if there's a simple action already determined by the vision
-        # model
+        # For now, just return a simple action based on the game state
+        # determined by the vision model
         if game_state_obj.action_analysis and game_state_obj.action_analysis.simple:
             if game_state_obj.action_analysis.action:
                 logger.info(
-                    f"Using simple action from vision model: {game_state_obj.action_analysis.action}"
+                    f"Using simple action from vision model: "
+                    f"{game_state_obj.action_analysis.action}"
                 )
                 # Convert Action object to dictionary for GameController
                 return game_state_obj.action_analysis.action.to_dict()
@@ -96,7 +96,8 @@ class GameAnalyzer:
                 turn=turn_number)
             logger.info("Monologue recorded in session log")
 
-            # Play monologue audio if TTS is available
+            # If the game state has a monologue, process it (will handle TTS if
+            # available)
             if self.tts_manager and self.tts_manager.is_available():
                 logger.info("Playing monologue audio")
                 self.tts_manager.speak_monologue(monologue)

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from kokoro import KModel, KPipeline
-import torch
 import os
 import sys
 import time
 from pathlib import Path
 
 import soundfile as sf
+import torch
+from kokoro import KModel, KPipeline
 
 # Add the src directory to the Python path
 sys.path.append(str(Path(__file__).parent.parent))

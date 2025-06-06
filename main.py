@@ -10,8 +10,9 @@ import time
 # Import project modules
 from src.capture.screenshot import ScreenCapturer
 from src.game_interface.game_controller import GameController
+from src.game_interface.scene_detect import SceneDetector
 from src.game_player.game_analyzer import GameAnalyzer
-from src.tts.tts_manager import TTSManager  # New TTS manager for monologues
+from src.tts.tts_manager import TTSManager
 from src.utils import model_call
 from src.utils.config_loader import load_config
 from src.utils.log_utils import get_session_logger, setup_logging
@@ -117,9 +118,22 @@ def main():
     logger.info("Session logger inited")
 
     # Initialize TTS Manager if enabled
-
     tts_manager = TTSManager(config.get("audio", {}))
-    logger.info("TTS inited and enabled")
+    logger.info("TTS initialized and enabled")
+
+    # Initialize Scene Detector
+    scene_config = {
+        "animation_diff_threshold": 0.02,
+        "animation_consecutive_frames": 3,
+        "animation_interval": 0.1,
+        "voice_detection_enabled": True,
+        "voice_silence_threshold": 2.0,
+        "whisper_model": "tiny",
+        "whisper_language": "zh",
+        "audio_recording_path": "temp_audio",
+    }
+    scene_detector = SceneDetector(scene_config)
+    logger.info("Scene detector initialized")
 
     # Create game controller and analyzer
     game_controller = GameController(config=game_config)
@@ -142,6 +156,30 @@ def main():
 
             # Capture screenshot and analyze game state
             image = screenshot_capture.capture()
+
+            # Check for scene detection (animations and voice)
+            scene_result = scene_detector.record(image)
+
+            if not scene_result:
+                logger.error("No scene results available, need log check!")
+                continue
+
+            if not scene_result.get("finished", True):
+                logger.info("Scene detection in progress, waiting...")
+                time.sleep(1)  # Wait 1 second before continuing
+                continue
+
+            if scene_result.get("animation_detected", False):
+                logger.info("Animation detected in scene")
+                # Key frames are available in scene_result["animation_frames"]
+
+            if scene_result.get("voice_detected", False):
+                logger.info("Voice detected in scene")
+                # Dialogue is available in scene_result["dialogue"]
+
+            # Log scene detection results if session logging is enabled
+            if session_log:
+                session_log.log_scene_detection(scene_result, turn=turn_count)
 
             # Log screenshot if enabled
             if session_log:

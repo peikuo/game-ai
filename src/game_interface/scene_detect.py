@@ -6,13 +6,13 @@ including visual animations and audio (human voice) detection with
 transcription.
 """
 
+import json
 import logging
 import os
 import threading
 import time
 import wave
-from typing import Any, Dict
-
+from typing import Dict, Any
 import numpy as np
 
 # Set up logger
@@ -116,19 +116,32 @@ class SceneDetector:
             return
 
         try:
-            # Initialize WebRTCVAD with mode 3 (most aggressive)
-            self.vad = webrtcvad.Vad(3)
+            # Get VAD mode from config (0=least aggressive, 3=most aggressive)
+            # Default to mode 1 which is less aggressive than the previous default of 3
+            vad_mode = self.config.get("vad_mode", 1)
+            logger.info(f"Initializing WebRTCVAD with mode {vad_mode}")
+            self.vad = webrtcvad.Vad(vad_mode)
 
             # Set up audio parameters for voice detection
-            self.vad_sample_rate = 16000  # Hz
-            self.vad_frame_duration = 30  # ms
+            self.vad_sample_rate = self.config.get("vad_sample_rate", 16000)  # Hz
+            self.vad_frame_duration = self.config.get("vad_frame_duration", 30)  # ms
             self.vad_buffer = []
             self.audio_frames = []
             self.voice_detected = False
             self.last_voice_time = 0
+            
+            # Create a unique filename for this recording session
+            timestamp = int(time.time())
             self.temp_audio_file = os.path.join(
-                self.audio_recording_path, f"audio_{int(time.time())}.wav"
+                self.audio_recording_path, f"audio_{timestamp}.wav"
             )
+            
+            # Make sure the audio recording directory exists
+            os.makedirs(self.audio_recording_path, exist_ok=True)
+            
+            logger.info(f"Voice detection initialized with sample rate {self.vad_sample_rate}Hz")
+            logger.info(f"Audio will be saved to {self.temp_audio_file}")
+            
         except Exception as e:
             logger.error(f"Error initializing VAD: {e}")
             self.voice_detection_enabled = False
@@ -140,7 +153,7 @@ class SceneDetector:
         self.prev_frame = None
         self.frame_diffs = []
         self.previous_frames = []
-        self.animation_detected = False
+        self.animation_detected = False  # This will be maintained across turns
         self.animation_frames = []
         self.consecutive_changes = 0
         self.animation_start_time = None
@@ -149,6 +162,18 @@ class SceneDetector:
         # Voice detection state
         self.voice_detected = False
         self.voice_recording = False
+        
+    def reset(self):
+        """Reset the scene detector state completely for a new scene.
+        This should be called when starting a completely new scene detection session.
+        """
+        self._reset_state()
+        # Stop any ongoing voice detection
+        self.stop_voice_detection.set()
+        # Reset audio recording state
+        self.audio_frames = []
+        self.audio_buffer = []
+        self.audio_sample_rate = 16000
         self.voice_recording_thread = None
         self.voice_data = bytearray()
         self.voice_start_time = None
@@ -228,16 +253,23 @@ class SceneDetector:
 
         # Process audio if voice was detected
         dialogue = None
+        voice_content = None
         if self.voice_detected and self.audio_recorded:
-            dialogue = self._process_audio_to_text()
+            # Process audio to text
+            transcription = self._process_audio_to_text()
+            if transcription and "dialogue" in transcription:
+                dialogue = "\n".join([d["text"] for d in transcription["dialogue"]])
+                # Store raw voice content for logging
+                voice_content = json.dumps(transcription, indent=2)
 
-        # Prepare result
+        # Prepare final result
         result = {
-            "finished": True,  # Default to finished
-            "animation_detected": animation_result.get("animation_detected", False),
-            "animation_frames": animation_result.get("frames", []),
+            "finished": animation_result.get("animation_finished", True),
+            "animation_detected": animation_result["animation_detected"] or self.animation_detected,
+            "animation_frames": animation_result["frames"],
             "voice_detected": self.voice_detected,
-            "duration": animation_result.get("duration", 0),
+            "voice_content": voice_content,
+            "duration": animation_result["duration"],
             "dialogue": dialogue,
         }
 
@@ -325,67 +357,187 @@ class SceneDetector:
         if animation_detected and not animation_finished:
             self.animation_frames.append(np.array(screen))
 
-        duration = time.time() - start_time
+        # Animation detection
+        animation_result = self._detect_animation(screen, max_duration)
 
-        # Sample key frames if animation is detected and finished
-        key_frames = []
-        if animation_detected:
-            logger.info(
-                f"Captured {len(self.animation_frames)} frames of animation over {duration:.2f} seconds"
-            )
-            if time.time() - start_time >= max_duration:
-                logger.info("Animation recording reached maximum duration")
-                animation_finished = True
-                # Sample key frames when animation is finished
-                if len(self.animation_frames) > 0:
-                    # Sample at most 5 key frames evenly distributed
-                    num_frames = min(5, len(self.animation_frames))
-                    indices = np.linspace(
-                        0, len(self.animation_frames) - 1, num_frames, dtype=int
-                    )
-                    key_frames = [self.animation_frames[i] for i in indices]
-                    logger.info(
-                        f"Sampled {len(key_frames)} key frames from animation")
-                # Clear animation frames for next detection
-                self.animation_frames = []
-            else:
-                # Animation is still in progress
-                animation_finished = False
-        else:
-            logger.info("No animation detected")
-            animation_finished = True
-            # For non-animation cases, keep at least the initial frame if
-            # available
-            if len(self.animation_frames) > 0:
-                key_frames = [self.animation_frames[0]]
-            # Clear animation frames for next detection
-            self.animation_frames = []
+        # Wait for voice detection to complete if it's running
+        if (
+            self.voice_detection_enabled
+            and self.voice_detection_thread
+            and self.voice_detection_thread.is_alive()
+        ):
+            self.stop_voice_detection.set()
+            self.voice_detection_thread.join(timeout=1.0)
+            logger.info("Voice detection stopped")
 
-        return {
-            "animation_detected": animation_detected,
-            "animation_finished": animation_finished,
-            "frames": key_frames,  # Return sampled key frames or initial frame
-            "duration": time.time() - start_time,
+        # Process audio if voice was detected
+        dialogue = None
+        voice_content = None
+        if self.voice_detected and self.audio_recorded:
+            # Process audio to text
+            transcription = self._process_audio_to_text()
+            if transcription and "dialogue" in transcription:
+                dialogue = "\n".join([d["text"] for d in transcription["dialogue"]])
+                # Store raw voice content for logging
+                voice_content = json.dumps(transcription, indent=2)
+
+        # Prepare final result
+        result = {
+            "finished": animation_result.get("animation_finished", True),
+            "animation_detected": animation_result["animation_detected"] or self.animation_detected,
+            "animation_frames": animation_result["frames"],
+            "voice_detected": self.voice_detected,
+            "voice_content": voice_content,
+            "duration": animation_result["duration"],
+            "dialogue": dialogue,
         }
 
-    def _detect_screen_change(self, new_frame, threshold=None) -> bool:
+        # If either animation or voice is still active, mark as not finished
+        if (
+            animation_result.get("animation_detected", False)
+            and not animation_result.get("animation_finished", True)
+        ) or (self.voice_detected and not self.audio_recorded):
+            result["finished"] = False
+
+        logger.info(
+            f"Scene recording completed: animation={result['animation_detected']}, voice={result['voice_detected']}, finished={result['finished']}"
+        )
+        return result
+
+def _detect_animation(self, screen, max_duration=10.0) -> Dict[str, Any]:
+    """
+    Detect if an animation is occurring and capture frames.
+
+    Args:
+        screen: The screen image captured by main.py (numpy array)
+        max_duration (float): Maximum duration to monitor in seconds
+
+    Returns:
+        dict: Animation detection results
+    """
+    logger.info(f"Monitoring for animation in region: full_screen")
+
+    # Initialize variables
+    start_time = time.time()
+    animation_detected = False
+    animation_finished = False
+
+    # Initialize frames list if not already initialized
+    if not hasattr(
+            self,
+            "animation_frames") or self.animation_frames is None:
+        self.animation_frames = []
+
+    # Use the provided screen as the current frame
+    if screen is not None:
+        initial_frame = np.array(screen)
+        self.animation_frames.append(initial_frame)
+        self.prev_frame = initial_frame
+    else:
+        logger.error("No screen provided")
+        return {
+            "animation_detected": False,
+            "animation_finished": True,
+            "frames": [],
+            "duration": 0,
+        }
+
+    # Since we're now receiving frames from main.py, we can't monitor for animation in a loop
+    # Instead, we'll analyze the single frame we received and compare it to
+    # the previous frame
+
+    # Check if screen has changed from previous frame
+    if self.prev_frame is not None and self._detect_screen_change(
+            np.array(screen)):
+        self.consecutive_changes += 1
+
+        # If we detect consistent changes across multiple calls, it's
+        # likely an animation
+        if self.consecutive_changes >= self.min_frames and not animation_detected:
+            logger.info(
+                f"Animation detected after {self.consecutive_changes} consecutive changes"
+            )
+            animation_detected = True
+    else:
+        self.consecutive_changes = 0
+
+        # If animation was previously detected but has now stopped
+        if animation_detected:
+            logger.info(
+                f"Animation appears to have stopped after {len(self.animation_frames)} frames"
+            )
+            animation_finished = True
+
+    # Update the previous frame for the next comparison
+    self.prev_frame = np.array(screen)
+
+    # Store the frame if we're tracking an animation or if this is the
+    # first frame
+    if animation_detected and not animation_finished:
+        self.animation_frames.append(np.array(screen))
+
+    duration = time.time() - start_time
+
+    # Sample key frames if animation is detected and finished
+    key_frames = []
+    if animation_detected:
+        logger.info(
+            f"Captured {len(self.animation_frames)} frames of animation over {duration:.2f} seconds"
+        )
+        if time.time() - start_time >= max_duration:
+            logger.info("Animation recording reached maximum duration")
+            animation_finished = True
+            # Sample key frames when animation is finished
+            if len(self.animation_frames) > 0:
+                # Sample at most 5 key frames evenly distributed
+                num_frames = min(5, len(self.animation_frames))
+                indices = np.linspace(
+                    0, len(self.animation_frames) - 1, num_frames, dtype=int
+                )
+                key_frames = [self.animation_frames[i] for i in indices]
+                logger.info(
+                    f"Sampled {len(key_frames)} key frames from animation")
+            # Clear animation frames for next detection
+            self.animation_frames = []
+        else:
+            # Animation is still in progress
+            animation_finished = False
+    else:
+        # Only report no animation if we haven't detected any animation previously
+        if not self.animation_detected:
+            logger.info("No animation detected")
+        animation_finished = True
+        # For non-animation cases, keep at least the initial frame if
+        # available
+        if len(self.animation_frames) > 0:
+            key_frames = [self.animation_frames[0]]
+        # Clear animation frames for next detection
+        self.animation_frames = []
+
+    return {
+        "animation_detected": animation_detected,
+        "animation_finished": animation_finished,
+        "frames": key_frames,  # Return sampled key frames or initial frame
+        "duration": time.time() - start_time,
+    }
+
+    def _detect_screen_change(self, new_frame, threshold=None):
         """
-                Detect if the screen has changed significantly from the previous frame.
-        {{ ... }}
+        Detect if the screen has changed significantly from the previous frame.
+        
+        Args:
+            new_frame (numpy.ndarray): New frame to compare
+            threshold (float, optional): Custom threshold for change detection
 
-                Args:
-                    new_frame (numpy.ndarray): New frame to compare
-                    threshold (float, optional): Custom threshold for change detection
-
-                Returns:
-                    bool: True if the screen has changed significantly, False otherwise
+        Returns:
+            bool: True if the screen has changed significantly, False otherwise
         """
         # Convert to grayscale for simpler comparison using pure NumPy
         # (avoiding OpenCV)
         if len(new_frame.shape) == 3:  # Color image
             # Use simple averaging for grayscale conversion
             gray_frame = np.mean(new_frame, axis=2).astype(np.uint8)
-        else:  # Already grayscale
+        else:
             gray_frame = new_frame
 
         # Add to history
@@ -446,15 +598,35 @@ class SceneDetector:
             channels = 1
             rate = self.vad_sample_rate
             chunk = int(rate * self.vad_frame_duration / 1000)
+            
+            # Log available audio devices to help with debugging
+            logger.info("Available audio input devices:")
+            info = audio.get_host_api_info_by_index(0)
+            num_devices = info.get('deviceCount')
+            
+            for i in range(num_devices):
+                device_info = audio.get_device_info_by_host_api_device_index(0, i)
+                if device_info.get('maxInputChannels') > 0:
+                    logger.info(f"Device {i}: {device_info.get('name')}")
+            
+            # Use specified device index if provided in config
+            device_index = self.config.get("audio_device_index", None)
+            if device_index is not None:
+                logger.info(f"Using specified audio device index: {device_index}")
 
-            # Open audio stream
-            stream = audio.open(
-                format=format,
-                channels=channels,
-                rate=rate,
-                input=True,
-                frames_per_buffer=chunk,
-            )
+            # Open audio stream with specified device if provided
+            stream_kwargs = {
+                "format": format,
+                "channels": channels,
+                "rate": rate,
+                "input": True,
+                "frames_per_buffer": chunk,
+            }
+            
+            if device_index is not None:
+                stream_kwargs["input_device_index"] = device_index
+                
+            stream = audio.open(**stream_kwargs)
 
             # Start monitoring
             start_time = time.time()
@@ -464,49 +636,87 @@ class SceneDetector:
             self.audio_frames = []
             self.is_recording_audio = True
             self.audio_recorded = False
+            
+            # For debugging: record a few seconds regardless of voice detection
+            debug_record_seconds = self.config.get("debug_record_seconds", 0)
+            if debug_record_seconds > 0:
+                logger.info(f"Debug mode: Recording {debug_record_seconds} seconds regardless of voice detection")
 
             logger.info("Voice monitoring started")
+            
+            # Track consecutive voice frames for more reliable detection
+            consecutive_voice_frames = 0
+            min_consecutive_frames = self.config.get("min_consecutive_voice_frames", 3)
+            
+            # Keep track of volume levels for debugging
+            volume_levels = []
 
             while not self.stop_voice_detection.is_set() and (
                 time.time() - start_time < max_duration
             ):
-                # Read audio frame
-                frame = stream.read(chunk, exception_on_overflow=False)
-
-                # Always store audio frames for processing later
-                self.audio_frames.append(frame)
-
-                # Check if frame contains voice
                 try:
-                    is_speech = self.vad.is_speech(frame, rate)
+                    # Read audio frame
+                    frame = stream.read(chunk, exception_on_overflow=False)
+                    
+                    # Calculate audio volume for debugging
+                    if len(frame) > 0:
+                        audio_data = np.frombuffer(frame, dtype=np.int16)
+                        volume = np.abs(audio_data).mean()
+                        volume_levels.append(volume)
+                        if len(volume_levels) % 10 == 0:  # Log every 10 frames
+                            logger.debug(f"Current audio volume: {volume}")
 
-                    if is_speech:
-                        if not voice_active:
-                            logger.info("Voice detected")
-                            voice_active = True
-                            self.voice_detected = True
+                    # Always store audio frames for processing later
+                    self.audio_frames.append(frame)
 
-                        last_voice_time = time.time()
-                        silence_duration = 0
-                    elif voice_active:
-                        # Calculate silence duration
-                        silence_duration = time.time() - last_voice_time
+                    # Check if frame contains voice
+                    try:
+                        is_speech = self.vad.is_speech(frame, rate)
 
-                        # If silence exceeds threshold, consider voice stopped
-                        if silence_duration > self.voice_silence_threshold:
-                            logger.info(
-                                f"Voice stopped after {silence_duration:.2f}s of silence"
-                            )
-                            voice_active = False
+                        if is_speech:
+                            consecutive_voice_frames += 1
+                            
+                            # Only consider it voice if we have enough consecutive frames
+                            if consecutive_voice_frames >= min_consecutive_frames and not voice_active:
+                                logger.info(f"Voice detected after {consecutive_voice_frames} consecutive frames")
+                                voice_active = True
+                                self.voice_detected = True
 
-                            # If we've detected voice and then silence, we can
-                            # stop recording
-                            if (self.voice_detected and time.time() - start_time >
-                                    2.0):  # Ensure at least 2 seconds of audio
-                                logger.info("Voice recording complete")
-                                break
+                            last_voice_time = time.time()
+                            silence_duration = 0
+                        else:
+                            consecutive_voice_frames = 0
+                            
+                            if voice_active:
+                                # Calculate silence duration
+                                silence_duration = time.time() - last_voice_time
+
+                                # If silence exceeds threshold, consider voice stopped
+                                if silence_duration > self.voice_silence_threshold:
+                                    logger.info(
+                                        f"Voice stopped after {silence_duration:.2f}s of silence"
+                                    )
+                                    voice_active = False
+
+                                    # If we've detected voice and then silence, we can
+                                    # stop recording
+                                    if (self.voice_detected and time.time() - start_time >
+                                            2.0):  # Ensure at least 2 seconds of audio
+                                        logger.info("Voice recording complete")
+                                        break
+                    except Exception as e:
+                        logger.error(f"Error in voice detection frame analysis: {e}")
+                        
+                except IOError as e:
+                    logger.error(f"IOError reading from audio stream: {e}")
+                    # Try to recover by sleeping briefly
+                    time.sleep(0.1)
                 except Exception as e:
-                    logger.error(f"Error in voice detection: {e}")
+                    logger.error(f"Error reading audio frame: {e}")
+                    
+            # For debug recording mode, always mark as detected if we recorded enough frames
+            if debug_record_seconds > 0 and len(self.audio_frames) > 0:
+                self.voice_detected = True
 
             # Clean up
             stream.stop_stream()
@@ -514,10 +724,14 @@ class SceneDetector:
             audio.terminate()
 
             # Save the recorded audio
-            if self.voice_detected and len(self.audio_frames) > 0:
+            if (self.voice_detected or debug_record_seconds > 0) and len(self.audio_frames) > 0:
                 self._save_audio_frames()
                 self.audio_recorded = True
                 logger.info(f"Audio saved to {self.temp_audio_file}")
+                
+                # Log audio statistics
+                if volume_levels:
+                    logger.info(f"Audio volume stats - Min: {min(volume_levels)}, Max: {max(volume_levels)}, Avg: {sum(volume_levels)/len(volume_levels):.2f}")
 
             self.is_recording_audio = False
             logger.info(

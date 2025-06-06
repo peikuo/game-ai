@@ -1,0 +1,181 @@
+"""
+This is a patch file for fixing the _monitor_voice method in scene_detect.py.
+After testing the isolated voice monitor implementation and confirming it works,
+you can apply these changes to the main scene_detect.py file.
+
+The main issue is that the _monitor_voice method is not properly defined within
+the SceneDetector class scope, causing the 'SceneDetector' object has no attribute 
+'_monitor_voice' error.
+
+Instructions:
+1. Make sure the _monitor_voice method is properly indented as a class method
+2. Ensure there are no hidden whitespace or indentation issues
+3. Check that the method signature matches what's expected in the record method
+"""
+
+# Fix for the _monitor_voice method - ensure it's properly defined in the SceneDetector class
+# Replace the current implementation with this one:
+
+def _monitor_voice(self, max_duration=10.0):
+    """
+    Monitor for human voice activity and record audio when detected.
+
+    Args:
+        max_duration (float): Maximum duration to monitor in seconds
+    """
+    if not VAD_AVAILABLE or not self.vad:
+        logger.error("Voice detection dependencies not available")
+        return
+
+    try:
+        # Initialize PyAudio
+        audio = pyaudio.PyAudio()
+
+        # Parameters for audio recording
+        format = pyaudio.paInt16
+        channels = 1
+        rate = self.vad_sample_rate
+        chunk = int(rate * self.vad_frame_duration / 1000)
+        
+        # Log available audio devices to help with debugging
+        logger.info("Available audio input devices:")
+        info = audio.get_host_api_info_by_index(0)
+        num_devices = info.get('deviceCount')
+        
+        for i in range(num_devices):
+            device_info = audio.get_device_info_by_host_api_device_index(0, i)
+            if device_info.get('maxInputChannels') > 0:
+                logger.info(f"Device {i}: {device_info.get('name')}")
+        
+        # Use specified device index if provided in config
+        device_index = self.config.get("audio_device_index", None)
+        if device_index is not None:
+            logger.info(f"Using specified audio device index: {device_index}")
+
+        # Open audio stream with specified device if provided
+        stream_kwargs = {
+            "format": format,
+            "channels": channels,
+            "rate": rate,
+            "input": True,
+            "frames_per_buffer": chunk,
+        }
+        
+        if device_index is not None:
+            stream_kwargs["input_device_index"] = device_index
+            
+        stream = audio.open(**stream_kwargs)
+
+        # Start monitoring
+        start_time = time.time()
+        last_voice_time = 0
+        silence_duration = 0
+        voice_active = False
+        self.audio_frames = []
+        self.is_recording_audio = True
+        self.audio_recorded = False
+        
+        # For debugging: record a few seconds regardless of voice detection
+        debug_record_seconds = self.config.get("debug_record_seconds", 0)
+        if debug_record_seconds > 0:
+            logger.info(f"Debug mode: Recording {debug_record_seconds} seconds regardless of voice detection")
+
+        logger.info("Voice monitoring started")
+        
+        # Track consecutive voice frames for more reliable detection
+        consecutive_voice_frames = 0
+        min_consecutive_frames = self.config.get("min_consecutive_voice_frames", 3)
+        
+        # Keep track of volume levels for debugging
+        volume_levels = []
+
+        while not self.stop_voice_detection.is_set() and (
+            time.time() - start_time < max_duration
+        ):
+            try:
+                # Read audio frame
+                frame = stream.read(chunk, exception_on_overflow=False)
+                
+                # Calculate audio volume for debugging
+                if len(frame) > 0:
+                    audio_data = np.frombuffer(frame, dtype=np.int16)
+                    volume = np.abs(audio_data).mean()
+                    volume_levels.append(volume)
+                    if len(volume_levels) % 10 == 0:  # Log every 10 frames
+                        logger.debug(f"Current audio volume: {volume}")
+
+                # Always store audio frames for processing later
+                self.audio_frames.append(frame)
+
+                # Check if frame contains voice
+                try:
+                    is_speech = self.vad.is_speech(frame, rate)
+
+                    if is_speech:
+                        consecutive_voice_frames += 1
+                        
+                        # Only consider it voice if we have enough consecutive frames
+                        if consecutive_voice_frames >= min_consecutive_frames and not voice_active:
+                            logger.info(f"Voice detected after {consecutive_voice_frames} consecutive frames")
+                            voice_active = True
+                            self.voice_detected = True
+
+                        last_voice_time = time.time()
+                        silence_duration = 0
+                    else:
+                        consecutive_voice_frames = 0
+                        
+                        if voice_active:
+                            # Calculate silence duration
+                            silence_duration = time.time() - last_voice_time
+
+                            # If silence exceeds threshold, consider voice stopped
+                            if silence_duration > self.voice_silence_threshold:
+                                logger.info(
+                                    f"Voice stopped after {silence_duration:.2f}s of silence"
+                                )
+                                voice_active = False
+
+                                # If we've detected voice and then silence, we can
+                                # stop recording
+                                if (self.voice_detected and time.time() - start_time >
+                                        2.0):  # Ensure at least 2 seconds of audio
+                                    logger.info("Voice recording complete")
+                                    break
+                except Exception as e:
+                    logger.error(f"Error in voice detection frame analysis: {e}")
+                    
+            except IOError as e:
+                logger.error(f"IOError reading from audio stream: {e}")
+                # Try to recover by sleeping briefly
+                time.sleep(0.1)
+            except Exception as e:
+                logger.error(f"Error reading audio frame: {e}")
+                
+        # For debug recording mode, always mark as detected if we recorded enough frames
+        if debug_record_seconds > 0 and len(self.audio_frames) > 0:
+            self.voice_detected = True
+
+        # Clean up
+        stream.stop_stream()
+        stream.close()
+        audio.terminate()
+
+        # Save the recorded audio
+        if (self.voice_detected or debug_record_seconds > 0) and len(self.audio_frames) > 0:
+            self._save_audio_frames()
+            self.audio_recorded = True
+            logger.info(f"Audio saved to {self.temp_audio_file}")
+            
+            # Log audio statistics
+            if volume_levels:
+                logger.info(f"Audio volume stats - Min: {min(volume_levels)}, Max: {max(volume_levels)}, Avg: {sum(volume_levels)/len(volume_levels):.2f}")
+
+        self.is_recording_audio = False
+        logger.info(
+            f"Voice monitoring completed after {time.time() - start_time:.2f}s"
+        )
+
+    except Exception as e:
+        logger.error(f"Error in voice monitoring: {e}")
+        self.is_recording_audio = False

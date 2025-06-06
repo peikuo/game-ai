@@ -6,7 +6,6 @@ Example script demonstrating how to integrate scene detection with voice transcr
 into the main game loop.
 """
 
-from src.game_interface.scene_detect import SceneDetector
 import logging
 import os
 import sys
@@ -14,6 +13,8 @@ import time
 
 import numpy as np
 from PIL import Image
+
+from src.game_interface.scene_detect import SceneDetector
 
 # Add the project root to the path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

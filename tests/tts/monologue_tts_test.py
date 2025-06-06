@@ -4,12 +4,13 @@ Test script for monologue TTS feature.
 This script demonstrates how the monologue feature works with the TTSManager.
 """
 
-from src.utils.config_loader import load_config
-from src.tts.tts_manager import TTSManager
 import os
 import sys
 import warnings
 from pathlib import Path
+
+from src.tts.tts_manager import TTSManager
+from src.utils.config_loader import load_config
 
 # Filter warnings to suppress FutureWarning messages
 warnings.filterwarnings("ignore", category=FutureWarning)

@@ -4,13 +4,14 @@ Test script to verify TTS functionality in the Game AI.
 This script initializes the TTS components directly to verify proper configuration.
 """
 
-import soundfile as sf
-import numpy as np
-import os
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
+
+import numpy as np
+import soundfile as sf
 
 from src.tts.tts_manager import TTSManager
 from src.utils.config_loader import load_config
